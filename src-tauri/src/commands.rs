@@ -222,12 +222,6 @@ pub async fn update_config(
 }
 
 #[tauri::command]
-pub async fn select_directory() -> Result<Option<String>, String> {
-    // This is handled by the frontend using the dialog plugin directly
-    Ok(None)
-}
-
-#[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {
     opener::open(&path).map_err(|e| format!("Failed to open file: {}", e))
 }

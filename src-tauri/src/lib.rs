@@ -33,7 +33,6 @@ pub fn run() {
             commands::clear_completed_downloads,
             commands::get_config,
             commands::update_config,
-            commands::select_directory,
             commands::open_file,
             commands::open_folder,
             commands::get_format_presets,

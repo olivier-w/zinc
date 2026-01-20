@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import type { VideoInfo, FormatPreset } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
+import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
 import { DownloadIcon, XIcon } from './Icons';
 
 interface VideoPreviewProps {
@@ -11,31 +12,6 @@ interface VideoPreviewProps {
   isDownloading?: boolean;
 }
 
-const qualityPresets: { id: FormatPreset; shortLabel: string }[] = [
-  { id: 'best', shortLabel: 'Best' },
-  { id: '1080p', shortLabel: '1080p' },
-  { id: '720p', shortLabel: '720p' },
-  { id: '480p', shortLabel: '480p' },
-  { id: 'audio', shortLabel: 'Audio' },
-];
-
-const containerFormats = [
-  { id: 'original', label: 'Original' },
-  { id: 'mp4', label: 'MP4' },
-  { id: 'webm', label: 'WebM' },
-  { id: 'mkv', label: 'MKV' },
-] as const;
-
-const audioFormats = [
-  { id: 'original', label: 'Original' },
-  { id: 'mp3', label: 'MP3' },
-  { id: 'm4a', label: 'M4A' },
-  { id: 'opus', label: 'Opus' },
-] as const;
-
-type ContainerFormat = typeof containerFormats[number]['id'];
-type AudioFormat = typeof audioFormats[number]['id'];
-
 export function VideoPreview({
   video,
   onDownload,
@@ -43,8 +19,8 @@ export function VideoPreview({
   isDownloading = false,
 }: VideoPreviewProps) {
   const [selectedQuality, setSelectedQuality] = useState<FormatPreset>('best');
-  const [selectedContainer, setSelectedContainer] = useState<ContainerFormat>('original');
-  const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormat>('original');
+  const [selectedContainer, setSelectedContainer] = useState<VideoFormatId>('original');
+  const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormatId>('original');
 
   const isAudioOnly = selectedQuality === 'audio';
 
@@ -98,7 +74,7 @@ export function VideoPreview({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      className="w-full max-w-4xl max-h-[calc(100vh-180px)] glass rounded-2xl overflow-y-auto relative"
+      className="w-full max-w-4xl max-h-[calc(100vh-200px)] min-h-[280px] glass rounded-2xl overflow-y-auto relative"
     >
       {/* Close button */}
       <button
@@ -112,7 +88,7 @@ export function VideoPreview({
       {/* Hero layout: side-by-side on larger screens */}
       <div className="flex flex-col md:flex-row">
         {/* Large thumbnail */}
-        <div className="relative md:w-1/2 h-48 md:h-auto md:min-h-[200px] bg-bg-tertiary shrink-0">
+        <div className="relative md:w-1/2 h-32 md:h-auto md:min-h-[200px] bg-bg-tertiary shrink-0">
           {video.thumbnail ? (
             <img
               src={video.thumbnail}
@@ -148,9 +124,9 @@ export function VideoPreview({
         </div>
 
         {/* Content side */}
-        <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="flex-1 p-3 md:p-4 flex flex-col min-h-0 min-w-0 overflow-hidden">
           {/* Title */}
-          <h2 className="text-base font-semibold text-text-primary leading-snug mb-3 pr-8 line-clamp-2 whitespace-normal">
+          <h2 className="text-sm md:text-base font-semibold text-text-primary leading-snug mb-2 pr-8 line-clamp-2 whitespace-normal">
             {video.title}
           </h2>
 
@@ -158,7 +134,7 @@ export function VideoPreview({
           <div className="mb-2">
             <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Quality</p>
             <div className="flex flex-wrap gap-1.5">
-              {qualityPresets.map((preset) => (
+              {QUALITY_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   onClick={() => setSelectedQuality(preset.id)}
@@ -179,12 +155,12 @@ export function VideoPreview({
           <div className="mb-2">
             <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Format</p>
             <div className="flex flex-wrap gap-1.5">
-              {(isAudioOnly ? audioFormats : containerFormats).map((format) => (
+              {(isAudioOnly ? AUDIO_FORMATS : VIDEO_FORMATS).map((format) => (
                 <button
                   key={format.id}
                   onClick={() => isAudioOnly
-                    ? setSelectedAudioFormat(format.id as AudioFormat)
-                    : setSelectedContainer(format.id as ContainerFormat)
+                    ? setSelectedAudioFormat(format.id as AudioFormatId)
+                    : setSelectedContainer(format.id as VideoFormatId)
                   }
                   className={cn(
                     'px-2.5 py-1 text-sm font-medium rounded-lg transition-all',

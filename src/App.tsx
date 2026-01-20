@@ -4,6 +4,7 @@ import { URLInput } from './components/URLInput';
 import { VideoPreview } from './components/VideoPreview';
 import { DownloadList } from './components/DownloadList';
 import { ToastContainer } from './components/Toast';
+import { ProgressBar } from './components/ProgressBar';
 import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './components/Icons';
 import { useDownload } from './hooks/useDownload';
 import { useSettings } from './hooks/useSettings';
@@ -173,14 +174,7 @@ function App() {
             </div>
             {installProgress && (
               <div className="w-full max-w-xs">
-                <div className="h-2 bg-bg-tertiary rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-accent"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${installProgress.percentage}%` }}
-                    transition={{ duration: 0.2 }}
-                  />
-                </div>
+                <ProgressBar percentage={installProgress.percentage} className="h-2" />
                 <p className="text-xs text-text-tertiary text-center mt-2">
                   {Math.round(installProgress.percentage)}%
                 </p>

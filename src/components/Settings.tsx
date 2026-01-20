@@ -3,7 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { AppConfig, YtDlpStatus, YtDlpInstallProgress } from '@/lib/types';
 import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
+import { QUALITY_PRESETS, FORMAT_OPTIONS } from '@/lib/constants';
 import { FolderIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon } from './Icons';
+import { ProgressBar } from './ProgressBar';
 
 interface SettingsProps {
   isOpen: boolean;
@@ -11,22 +13,6 @@ interface SettingsProps {
   config: AppConfig;
   onSave: (config: Partial<AppConfig>) => Promise<void>;
 }
-
-const qualityOptions = [
-  { value: 'best', label: 'Best Available' },
-  { value: '1080p', label: '1080p' },
-  { value: '720p', label: '720p' },
-  { value: '480p', label: '480p' },
-  { value: 'audio', label: 'Audio Only' },
-];
-
-const formatOptions = [
-  { value: 'original', label: 'Original' },
-  { value: 'mp4', label: 'MP4' },
-  { value: 'webm', label: 'WebM' },
-  { value: 'mkv', label: 'MKV' },
-  { value: 'mp3', label: 'MP3 (Audio)' },
-];
 
 
 export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
@@ -175,13 +161,13 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                   Default Quality
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {qualityOptions.map((option) => (
+                  {QUALITY_PRESETS.map((option) => (
                     <button
-                      key={option.value}
-                      onClick={() => handleQualityChange(option.value)}
+                      key={option.id}
+                      onClick={() => handleQualityChange(option.id)}
                       className={cn(
                         'px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                        config.default_quality === option.value
+                        config.default_quality === option.id
                           ? 'bg-accent text-white'
                           : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
                       )}
@@ -198,13 +184,13 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                   Default Format
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {formatOptions.map((option) => (
+                  {FORMAT_OPTIONS.map((option) => (
                     <button
-                      key={option.value}
-                      onClick={() => handleFormatChange(option.value)}
+                      key={option.id}
+                      onClick={() => handleFormatChange(option.id)}
                       className={cn(
                         'px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                        config.default_format === option.value
+                        config.default_format === option.id
                           ? 'bg-accent text-white'
                           : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
                       )}
@@ -277,14 +263,7 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
 
                     {isUpdating && updateProgress && (
                       <div className="px-4">
-                        <div className="h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
-                          <motion.div
-                            className="h-full bg-accent"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${updateProgress.percentage}%` }}
-                            transition={{ duration: 0.2 }}
-                          />
-                        </div>
+                        <ProgressBar percentage={updateProgress.percentage} />
                       </div>
                     )}
 

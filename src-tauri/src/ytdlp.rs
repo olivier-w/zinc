@@ -68,6 +68,12 @@ impl Default for DownloadOptions {
     }
 }
 
+fn try_capture_filename(regex: &Option<Regex>, line: &str) -> Option<String> {
+    regex.as_ref()
+        .and_then(|r| r.captures(line))
+        .map(|caps| caps[1].to_string())
+}
+
 pub struct YtDlp;
 
 impl YtDlp {
@@ -211,23 +217,12 @@ impl YtDlp {
         let mut final_filename: Option<String> = None;
 
         while let Ok(Some(line)) = reader.next_line().await {
-            // Capture destination from download lines
-            if let Some(ref regex) = download_regex {
-                if let Some(caps) = regex.captures(&line) {
-                    final_filename = Some(caps[1].to_string());
-                }
-            }
-            // Capture merged output (overwrites download destination with final merged file)
-            if let Some(ref regex) = merger_regex {
-                if let Some(caps) = regex.captures(&line) {
-                    final_filename = Some(caps[1].to_string());
-                }
-            }
-            // Capture already downloaded files
-            if let Some(ref regex) = already_downloaded_regex {
-                if let Some(caps) = regex.captures(&line) {
-                    final_filename = Some(caps[1].to_string());
-                }
+            // Capture output filename from various yt-dlp output patterns
+            if let Some(filename) = try_capture_filename(&download_regex, &line)
+                .or_else(|| try_capture_filename(&merger_regex, &line))
+                .or_else(|| try_capture_filename(&already_downloaded_regex, &line))
+            {
+                final_filename = Some(filename);
             }
 
             if let Some(ref regex) = progress_regex {
@@ -281,7 +276,8 @@ impl YtDlp {
                 "Download failed with unknown error".to_string()
             } else {
                 // Get the last few meaningful lines
-                error_lines.into_iter().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ")
+                let len = error_lines.len();
+                error_lines.into_iter().skip(len.saturating_sub(3)).collect::<Vec<_>>().join(" | ")
             };
             return Err(error_msg);
         }
