@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +27,7 @@ pub struct Download {
 pub struct AppState {
     pub config: Mutex<AppConfig>,
     pub downloads: Mutex<HashMap<String, Download>>,
+    pub cancel_senders: Mutex<HashMap<String, watch::Sender<bool>>>,
 }
 
 impl Default for AppState {
@@ -34,6 +35,7 @@ impl Default for AppState {
         Self {
             config: Mutex::new(AppConfig::load()),
             downloads: Mutex::new(HashMap::new()),
+            cancel_senders: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -108,6 +110,10 @@ pub async fn start_download(
     drop(config);
 
     let (progress_tx, mut progress_rx) = mpsc::channel::<DownloadProgress>(100);
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+
+    // Store the cancel sender so we can signal cancellation later
+    state.cancel_senders.lock().await.insert(download_id.clone(), cancel_tx);
 
     let app_clone = app.clone();
     let download_id_clone = download_id.clone();
@@ -142,7 +148,7 @@ pub async fn start_download(
             }
         }
 
-        match YtDlp::start_download(&url, options, progress_tx, download_id_clone.clone()).await {
+        match YtDlp::start_download(&url, options, progress_tx, download_id_clone.clone(), cancel_rx).await {
             Ok(path) => {
                 let mut downloads = state_clone.downloads.lock().await;
                 if let Some(download) = downloads.get_mut(&download_id_clone) {
@@ -155,12 +161,18 @@ pub async fn start_download(
             Err(e) => {
                 let mut downloads = state_clone.downloads.lock().await;
                 if let Some(download) = downloads.get_mut(&download_id_clone) {
-                    download.status = "error".to_string();
-                    download.error = Some(e);
+                    // Only set error status if not already cancelled
+                    if download.status != "cancelled" {
+                        download.status = "error".to_string();
+                        download.error = Some(e);
+                    }
                     let _ = app_clone.emit("download-progress", download.clone());
                 }
             }
         }
+
+        // Clean up cancel sender
+        state_clone.cancel_senders.lock().await.remove(&download_id_clone);
     });
 
     Ok(download_id)
@@ -168,13 +180,25 @@ pub async fn start_download(
 
 #[tauri::command]
 pub async fn cancel_download(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     download_id: String,
 ) -> Result<(), String> {
+    // Send cancellation signal to the download task
+    if let Some(cancel_tx) = state.cancel_senders.lock().await.get(&download_id) {
+        let _ = cancel_tx.send(true);
+    }
+
+    // Update the download status
     let mut downloads = state.downloads.lock().await;
     if let Some(download) = downloads.get_mut(&download_id) {
         download.status = "cancelled".to_string();
+        let _ = app.emit("download-progress", download.clone());
     }
+
+    // Clean up the cancel sender
+    state.cancel_senders.lock().await.remove(&download_id);
+
     Ok(())
 }
 

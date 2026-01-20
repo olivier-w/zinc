@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoFormat {
@@ -167,6 +167,7 @@ impl YtDlp {
         options: DownloadOptions,
         progress_tx: mpsc::Sender<DownloadProgress>,
         download_id: String,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
         let output_template = options
             .filename_template
@@ -215,47 +216,67 @@ impl YtDlp {
         let merger_regex = Regex::new(r#"\[Merger\]\s+Merging formats into "(.+)""#).ok();
 
         let mut final_filename: Option<String> = None;
+        let mut cancel_rx = cancel_rx;
 
-        while let Ok(Some(line)) = reader.next_line().await {
-            // Capture output filename from various yt-dlp output patterns
-            if let Some(filename) = try_capture_filename(&download_regex, &line)
-                .or_else(|| try_capture_filename(&merger_regex, &line))
-                .or_else(|| try_capture_filename(&already_downloaded_regex, &line))
-            {
-                final_filename = Some(filename);
-            }
-
-            if let Some(ref regex) = progress_regex {
-                if let Some(caps) = regex.captures(&line) {
-                    let progress: f64 = caps[1].parse().unwrap_or(0.0);
-                    let _ = progress_tx
-                        .send(DownloadProgress {
-                            download_id: download_id.clone(),
-                            status: "downloading".to_string(),
-                            progress,
-                            speed: Some(caps[3].to_string()),
-                            eta: Some(caps[4].to_string()),
-                            filename: final_filename.clone(),
-                            total_bytes: None,
-                            downloaded_bytes: None,
-                        })
-                        .await;
+        loop {
+            tokio::select! {
+                // Check for cancellation
+                _ = cancel_rx.changed() => {
+                    if *cancel_rx.borrow() {
+                        // Kill the child process
+                        let _ = child.kill().await;
+                        return Err("Download cancelled".to_string());
+                    }
                 }
-            }
+                // Read next line from stdout
+                line_result = reader.next_line() => {
+                    match line_result {
+                        Ok(Some(line)) => {
+                            // Capture output filename from various yt-dlp output patterns
+                            if let Some(filename) = try_capture_filename(&download_regex, &line)
+                                .or_else(|| try_capture_filename(&merger_regex, &line))
+                                .or_else(|| try_capture_filename(&already_downloaded_regex, &line))
+                            {
+                                final_filename = Some(filename);
+                            }
 
-            if line.contains("[download] 100%") {
-                let _ = progress_tx
-                    .send(DownloadProgress {
-                        download_id: download_id.clone(),
-                        status: "completed".to_string(),
-                        progress: 100.0,
-                        speed: None,
-                        eta: None,
-                        filename: final_filename.clone(),
-                        total_bytes: None,
-                        downloaded_bytes: None,
-                    })
-                    .await;
+                            if let Some(ref regex) = progress_regex {
+                                if let Some(caps) = regex.captures(&line) {
+                                    let progress: f64 = caps[1].parse().unwrap_or(0.0);
+                                    let _ = progress_tx
+                                        .send(DownloadProgress {
+                                            download_id: download_id.clone(),
+                                            status: "downloading".to_string(),
+                                            progress,
+                                            speed: Some(caps[3].to_string()),
+                                            eta: Some(caps[4].to_string()),
+                                            filename: final_filename.clone(),
+                                            total_bytes: None,
+                                            downloaded_bytes: None,
+                                        })
+                                        .await;
+                                }
+                            }
+
+                            if line.contains("[download] 100%") {
+                                let _ = progress_tx
+                                    .send(DownloadProgress {
+                                        download_id: download_id.clone(),
+                                        status: "completed".to_string(),
+                                        progress: 100.0,
+                                        speed: None,
+                                        eta: None,
+                                        filename: final_filename.clone(),
+                                        total_bytes: None,
+                                        downloaded_bytes: None,
+                                    })
+                                    .await;
+                            }
+                        }
+                        Ok(None) => break, // EOF
+                        Err(_) => break,
+                    }
+                }
             }
         }
 

@@ -81,6 +81,12 @@ body {
   outline-offset: 2px;
 }
 
+/* Remove focus outline from inputs inside glass containers (parent handles focus styling) */
+.glass input:focus,
+.glass input:focus-visible {
+  outline: none;
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -112,6 +118,50 @@ body {
 
 .glow-focus {
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+}
+
+/* Animated loading border */
+@keyframes border-rotate {
+  0% {
+    --border-angle: 0deg;
+  }
+  100% {
+    --border-angle: 360deg;
+  }
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.glow-loading {
+  position: relative;
+  background: rgba(20, 20, 20, 0.8);
+  border: none;
+}
+
+.glow-loading::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--border-angle),
+    transparent 40%,
+    #ef4444 50%,
+    #f87171 55%,
+    #ef4444 60%,
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-rotate 1.5s linear infinite;
+  pointer-events: none;
 }
 
 .glow-success {

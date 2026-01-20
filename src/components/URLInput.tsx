@@ -98,9 +98,10 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           relative flex items-center gap-2 p-2 rounded-2xl
           glass transition-all duration-300
           ${shake ? 'shake' : ''}
-          ${isValid === true ? 'glow-success' : ''}
+          ${isLoading ? 'glow-loading' : ''}
+          ${!isLoading && isValid === true ? 'glow-success' : ''}
           ${isValid === false ? 'border-error/50' : ''}
-          ${isFocused ? 'glow-focus' : ''}
+          ${!isLoading && isFocused ? 'glow-focus' : ''}
         `}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -113,11 +114,11 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           onKeyDown={handleKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder="Paste a video URL (YouTube, Vimeo, Twitter...)"
+          placeholder="Paste a video URL"
           disabled={disabled || isLoading}
           className={`
             flex-1 bg-transparent text-text-primary placeholder-text-tertiary
-            px-4 py-3.5 text-base outline-none
+            px-4 py-3.5 text-base outline-none focus:outline-none focus-visible:outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
           aria-label="Video URL"
