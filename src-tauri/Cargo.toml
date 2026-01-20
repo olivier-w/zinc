@@ -1,0 +1,31 @@
+[package]
+name = "zinc"
+version = "0.1.0"
+description = "A minimal, beautiful video download app"
+authors = ["Zinc"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "zinc_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.9.5", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.0", features = ["v4"] }
+regex = "1"
+dirs = "5"
+opener = "0.7"
+reqwest = { version = "0.11", features = ["stream", "json"] }
+futures-util = "0.3"
