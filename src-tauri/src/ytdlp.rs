@@ -93,25 +93,34 @@ impl YtDlp {
     }
 
     pub async fn check_installed() -> bool {
-        Command::new(Self::get_command())
-            .arg("--version")
+        let mut cmd = Command::new(Self::get_command());
+        cmd.arg("--version")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        cmd.status()
             .await
             .map(|s| s.success())
             .unwrap_or(false)
     }
 
     pub async fn get_video_info(url: &str) -> Result<VideoInfo, String> {
-        let output = Command::new(Self::get_command())
-            .args([
-                "--dump-json",
-                "--no-download",
-                "--no-warnings",
-                "--no-playlist",
-                url,
-            ])
+        let mut cmd = Command::new(Self::get_command());
+        cmd.args([
+            "--dump-json",
+            "--no-download",
+            "--no-warnings",
+            "--no-playlist",
+            url,
+        ]);
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        let output = cmd
             .output()
             .await
             .map_err(|e| format!("Failed to execute yt-dlp: {}. Is yt-dlp installed?", e))?;
@@ -196,6 +205,9 @@ impl YtDlp {
         cmd.arg(url)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
         let mut child = cmd
             .spawn()
@@ -311,6 +323,8 @@ impl YtDlp {
     pub fn get_format_presets() -> HashMap<String, String> {
         let mut presets = HashMap::new();
         presets.insert("best".to_string(), "bestvideo+bestaudio/best".to_string());
+        presets.insert("4k".to_string(), "bestvideo[height<=2160]+bestaudio/best[height<=2160]".to_string());
+        presets.insert("2k".to_string(), "bestvideo[height<=1440]+bestaudio/best[height<=1440]".to_string());
         presets.insert("1080p".to_string(), "bestvideo[height<=1080]+bestaudio/best[height<=1080]".to_string());
         presets.insert("720p".to_string(), "bestvideo[height<=720]+bestaudio/best[height<=720]".to_string());
         presets.insert("480p".to_string(), "bestvideo[height<=480]+bestaudio/best[height<=480]".to_string());

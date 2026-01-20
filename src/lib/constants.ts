@@ -2,6 +2,8 @@ import type { FormatPreset } from './types';
 
 export const QUALITY_PRESETS: { id: FormatPreset; label: string; shortLabel: string }[] = [
   { id: 'best', label: 'Best Available', shortLabel: 'Best' },
+  { id: '4k', label: '4K (2160p)', shortLabel: '4K' },
+  { id: '2k', label: '2K (1440p)', shortLabel: '2K' },
   { id: '1080p', label: '1080p', shortLabel: '1080p' },
   { id: '720p', label: '720p', shortLabel: '720p' },
   { id: '480p', label: '480p', shortLabel: '480p' },

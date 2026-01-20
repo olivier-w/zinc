@@ -46,7 +46,7 @@ export interface AppConfig {
   theme: 'system' | 'light' | 'dark';
 }
 
-export type FormatPreset = 'best' | '1080p' | '720p' | '480p' | 'audio' | 'mp3';
+export type FormatPreset = 'best' | '4k' | '2k' | '1080p' | '720p' | '480p' | 'audio' | 'mp3';
 
 export interface Toast {
   id: string;

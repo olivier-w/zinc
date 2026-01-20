@@ -69,10 +69,15 @@ impl YtDlpManager {
             return Err("yt-dlp is not installed".to_string());
         }
 
-        let output = Command::new(&binary_path)
-            .arg("--version")
+        let mut cmd = Command::new(&binary_path);
+        cmd.arg("--version")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        let output = cmd
             .output()
             .await
             .map_err(|e| format!("Failed to execute yt-dlp: {}", e))?;
