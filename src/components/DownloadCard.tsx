@@ -99,43 +99,37 @@ export const DownloadCard = memo(function DownloadCard({
           </div>
         )}
 
-        {/* Hover action overlay - for completed downloads */}
-        {isCompleted && download.output_path && (
+        {/* Hover action overlay - for non-active downloads */}
+        {!isActive && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: isHovered ? 1 : 0 }}
             className="absolute inset-0 bg-black/60 flex items-center justify-center gap-3"
           >
-            <button
-              onClick={handleOpenFile}
-              className="p-3 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
-              aria-label="Play file"
-            >
-              <PlayIcon className="w-6 h-6" />
-            </button>
-            <button
-              onClick={handleOpenFolder}
-              className="p-3 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
-              aria-label="Open folder"
-            >
-              <FolderIcon className="w-6 h-6" />
-            </button>
-          </motion.div>
-        )}
-
-        {/* Hover action overlay with remove - for non-active downloads */}
-        {!isActive && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: isHovered ? 1 : 0 }}
-            className="absolute inset-0 pointer-events-none"
-          >
+            {isCompleted && download.output_path && (
+              <>
+                <button
+                  onClick={handleOpenFile}
+                  className="p-3 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  aria-label="Play file"
+                >
+                  <PlayIcon className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={handleOpenFolder}
+                  className="p-3 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  aria-label="Open folder"
+                >
+                  <FolderIcon className="w-6 h-6" />
+                </button>
+              </>
+            )}
             <button
               onClick={handleClear}
-              className="absolute top-2 left-2 p-2 rounded-lg bg-error/80 hover:bg-error text-white transition-colors pointer-events-auto"
+              className="p-3 rounded-full bg-error/80 hover:bg-error text-white transition-colors"
               aria-label="Remove from list"
             >
-              <TrashIcon className="w-4 h-4" />
+              <TrashIcon className="w-6 h-6" />
             </button>
           </motion.div>
         )}
