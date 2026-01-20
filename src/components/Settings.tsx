@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { AppConfig, YtDlpStatus, YtDlpInstallProgress } from '@/lib/types';
 import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
-import { FolderIcon, SunIcon, MoonIcon, MonitorIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon } from './Icons';
+import { FolderIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon } from './Icons';
 
 interface SettingsProps {
   isOpen: boolean;
@@ -28,11 +28,6 @@ const formatOptions = [
   { value: 'mp3', label: 'MP3 (Audio)' },
 ];
 
-const themeOptions = [
-  { value: 'system', label: 'System', icon: MonitorIcon },
-  { value: 'light', label: 'Light', icon: SunIcon },
-  { value: 'dark', label: 'Dark', icon: MoonIcon },
-] as const;
 
 export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
   const [isSelectingDir, setIsSelectingDir] = useState(false);
@@ -116,9 +111,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
     await onSave({ default_format: format });
   }, [onSave]);
 
-  const handleThemeChange = useCallback(async (theme: 'system' | 'light' | 'dark') => {
-    await onSave({ theme });
-  }, [onSave]);
 
   return (
     <AnimatePresence>
@@ -220,34 +212,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                       {option.label}
                     </button>
                   ))}
-                </div>
-              </section>
-
-              {/* Theme */}
-              <section>
-                <label className="block text-sm font-medium text-text-primary mb-2">
-                  Theme
-                </label>
-                <div className="flex gap-2">
-                  {themeOptions.map((option) => {
-                    const Icon = option.icon;
-                    return (
-                      <button
-                        key={option.value}
-                        onClick={() => handleThemeChange(option.value)}
-                        className={cn(
-                          'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
-                          'text-sm font-medium transition-colors',
-                          config.theme === option.value
-                            ? 'bg-accent text-white'
-                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
-                        )}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span>{option.label}</span>
-                      </button>
-                    );
-                  })}
                 </div>
               </section>
 

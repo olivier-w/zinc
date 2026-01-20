@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { isValidUrl } from '@/lib/utils';
 import { ClipboardIcon, DownloadIcon, LoaderIcon } from './Icons';
@@ -11,17 +11,16 @@ interface URLInputProps {
 
 export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLInputProps) {
   const [url, setUrl] = useState('');
-  const [isValid, setIsValid] = useState<boolean | null>(null);
   const [shake, setShake] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Validate URL on change
-  useEffect(() => {
+  // Derive validation state from url
+  const isValid = useMemo(() => {
     if (url.trim() === '') {
-      setIsValid(null);
-    } else {
-      setIsValid(isValidUrl(url.trim()));
+      return null;
     }
+    return isValidUrl(url.trim());
   }, [url]);
 
   // Auto-focus input on mount
@@ -69,7 +68,6 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
 
     onSubmit(trimmed);
     setUrl('');
-    setIsValid(null);
   }, [url, onSubmit]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -94,18 +92,16 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
   }, []);
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-2xl">
+    <form onSubmit={handleSubmit} className="w-full max-w-3xl">
       <motion.div
         className={`
-          relative flex items-center gap-2 p-2 rounded-xl
-          bg-bg-secondary border transition-all duration-200
+          relative flex items-center gap-2 p-2 rounded-2xl
+          glass transition-all duration-300
           ${shake ? 'shake' : ''}
-          ${isValid === true ? 'border-success/50 shadow-[0_0_20px_rgba(34,197,94,0.15)]' : ''}
+          ${isValid === true ? 'glow-success' : ''}
           ${isValid === false ? 'border-error/50' : ''}
-          ${isValid === null ? 'border-border hover:border-border-hover' : ''}
-          focus-within:border-accent focus-within:shadow-glow
+          ${isFocused ? 'glow-focus' : ''}
         `}
-        whileFocus={{ scale: 1.01 }}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
@@ -115,11 +111,13 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           placeholder="Paste a video URL (YouTube, Vimeo, Twitter...)"
           disabled={disabled || isLoading}
           className={`
             flex-1 bg-transparent text-text-primary placeholder-text-tertiary
-            px-4 py-3 text-base outline-none
+            px-4 py-3.5 text-base outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
           aria-label="Video URL"
@@ -132,8 +130,8 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           onClick={handlePaste}
           disabled={disabled || isLoading}
           className={`
-            p-3 rounded-lg text-text-secondary hover:text-text-primary
-            hover:bg-bg-tertiary transition-colors
+            p-3 rounded-xl text-text-secondary hover:text-text-primary
+            hover:bg-white/10 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
           aria-label="Paste from clipboard"
@@ -145,12 +143,11 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           type="submit"
           disabled={disabled || isLoading || !isValid}
           className={`
-            p-3 rounded-lg bg-accent text-white
-            hover:bg-accent-hover transition-colors
+            p-3.5 rounded-xl btn-gradient text-white
+            flex items-center justify-center min-w-[52px]
             disabled:opacity-50 disabled:cursor-not-allowed
-            flex items-center justify-center min-w-[48px]
           `}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ scale: 0.95 }}
           aria-label={isLoading ? 'Loading video info' : 'Get video info'}
         >
           {isLoading ? (
@@ -162,7 +159,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
       </motion.div>
 
       {isValid === false && url.trim() !== '' && (
-        <p id="url-error" className="mt-2 text-sm text-error" role="alert">
+        <p id="url-error" className="mt-2 text-sm text-error text-center" role="alert">
           Please enter a valid URL
         </p>
       )}

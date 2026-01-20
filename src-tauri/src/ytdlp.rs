@@ -195,7 +195,9 @@ impl YtDlp {
             .map_err(|e| format!("Failed to start download: {}", e))?;
 
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+        let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
         let mut reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
 
         let progress_regex = Regex::new(
             r"\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\d+\.?\d*\w+)\s+at\s+(\d+\.?\d*\w+/s)\s+ETA\s+(\d+:\d+)"
@@ -268,7 +270,20 @@ impl YtDlp {
             .map_err(|e| format!("Failed to wait for download: {}", e))?;
 
         if !status.success() {
-            return Err("Download failed".to_string());
+            // Collect stderr for error details
+            let mut error_lines = Vec::new();
+            while let Ok(Some(line)) = stderr_reader.next_line().await {
+                if !line.is_empty() {
+                    error_lines.push(line);
+                }
+            }
+            let error_msg = if error_lines.is_empty() {
+                "Download failed with unknown error".to_string()
+            } else {
+                // Get the last few meaningful lines
+                error_lines.into_iter().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ")
+            };
+            return Err(error_msg);
         }
 
         Ok(final_filename

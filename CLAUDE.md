@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important: Windows Environment
+
+This project runs on Windows. **Never redirect output to `/dev/null` or `nul`** - these create problematic files on Windows. If you need to suppress output, use alternative approaches or simply don't redirect.
+
 ## Build & Development Commands
 
 ```bash

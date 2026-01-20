@@ -76,15 +76,26 @@ pub async fn start_download(
 
     state.downloads.lock().await.insert(download_id.clone(), download.clone());
 
-    let format_string = YtDlp::get_format_presets()
-        .get(&format)
-        .cloned()
-        .unwrap_or_else(|| format.clone());
-
-    let container_format = if format == "audio" || format == "mp3" || config.default_format == "original" {
-        None // Audio-only or original format doesn't need remux
+    // Parse format string - can be "quality" or "quality:container"
+    let (quality, container) = if format.contains(':') {
+        let parts: Vec<&str> = format.split(':').collect();
+        (parts[0].to_string(), Some(parts[1].to_string()))
     } else {
-        Some(config.default_format.clone())
+        (format.clone(), None)
+    };
+
+    let format_string = YtDlp::get_format_presets()
+        .get(&quality)
+        .cloned()
+        .unwrap_or_else(|| quality.clone());
+
+    // Determine container format
+    let is_audio_only = quality == "audio" || quality == "mp3";
+    let container_format = match &container {
+        Some(c) if c == "original" => None, // Original format doesn't need remux
+        Some(c) => Some(c.clone()),
+        None if is_audio_only => None, // Audio-only doesn't need container
+        None => Some(config.default_format.clone()),
     };
 
     let options = DownloadOptions {

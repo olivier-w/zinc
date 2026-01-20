@@ -41,15 +41,15 @@ export function DownloadList({
   }
 
   return (
-    <div className="w-full max-w-2xl">
-      <div className="flex items-center justify-between mb-3">
+    <div className="w-full max-w-6xl">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-medium text-text-secondary">
           Downloads ({downloads.length})
         </h2>
         {hasCompletedDownloads && (
           <button
             onClick={onClearCompleted}
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-tertiary hover:text-text-secondary hover:bg-bg-tertiary rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-text-tertiary hover:text-text-secondary hover:bg-bg-tertiary rounded-lg transition-colors"
           >
             <TrashIcon className="w-3.5 h-3.5" />
             <span>Clear completed</span>
@@ -57,7 +57,8 @@ export function DownloadList({
         )}
       </div>
 
-      <div className="flex flex-col gap-3">
+      {/* Responsive grid: 1 col on mobile, 2 on sm, 3 on md, 4 on lg */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <AnimatePresence mode="popLayout">
           {downloads.map(download => (
             <DownloadCard

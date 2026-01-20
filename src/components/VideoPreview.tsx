@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { VideoInfo, FormatPreset } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
-import { DownloadIcon, ChevronDownIcon, XIcon } from './Icons';
+import { DownloadIcon, XIcon } from './Icons';
 
 interface VideoPreviewProps {
   video: VideoInfo;
@@ -11,13 +11,30 @@ interface VideoPreviewProps {
   isDownloading?: boolean;
 }
 
-const formatPresets: { id: FormatPreset; label: string; description: string }[] = [
-  { id: 'best', label: 'Best Quality', description: 'Highest available quality' },
-  { id: '1080p', label: '1080p', description: 'Full HD video' },
-  { id: '720p', label: '720p', description: 'HD video' },
-  { id: '480p', label: '480p', description: 'Standard quality' },
-  { id: 'audio', label: 'Audio Only', description: 'Best audio, no video' },
+const qualityPresets: { id: FormatPreset; shortLabel: string }[] = [
+  { id: 'best', shortLabel: 'Best' },
+  { id: '1080p', shortLabel: '1080p' },
+  { id: '720p', shortLabel: '720p' },
+  { id: '480p', shortLabel: '480p' },
+  { id: 'audio', shortLabel: 'Audio' },
 ];
+
+const containerFormats = [
+  { id: 'original', label: 'Original' },
+  { id: 'mp4', label: 'MP4' },
+  { id: 'webm', label: 'WebM' },
+  { id: 'mkv', label: 'MKV' },
+] as const;
+
+const audioFormats = [
+  { id: 'original', label: 'Original' },
+  { id: 'mp3', label: 'MP3' },
+  { id: 'm4a', label: 'M4A' },
+  { id: 'opus', label: 'Opus' },
+] as const;
+
+type ContainerFormat = typeof containerFormats[number]['id'];
+type AudioFormat = typeof audioFormats[number]['id'];
 
 export function VideoPreview({
   video,
@@ -25,19 +42,17 @@ export function VideoPreview({
   onClose,
   isDownloading = false,
 }: VideoPreviewProps) {
-  const [selectedFormat, setSelectedFormat] = useState<FormatPreset>('best');
-  const [showFormats, setShowFormats] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState<FormatPreset>('best');
+  const [selectedContainer, setSelectedContainer] = useState<ContainerFormat>('original');
+  const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormat>('original');
 
-  const selectedPreset = useMemo(
-    () => formatPresets.find(p => p.id === selectedFormat),
-    [selectedFormat]
-  );
+  const isAudioOnly = selectedQuality === 'audio';
 
   const estimatedSize = useMemo(() => {
     const getSize = (f: typeof video.formats[0]) => f.filesize ?? f.filesize_approx ?? 0;
 
     // For audio-only, just find the best audio stream
-    if (selectedFormat === 'audio') {
+    if (selectedQuality === 'audio') {
       const audioFormats = video.formats.filter(f => f.vcodec === 'none' && f.acodec !== 'none');
       const bestAudio = audioFormats.sort((a, b) => getSize(b) - getSize(a))[0];
       return bestAudio ? formatBytes(getSize(bestAudio) || null) : null;
@@ -55,11 +70,11 @@ export function VideoPreview({
 
     // Filter video streams by resolution
     let filteredVideo = videoOnlyFormats;
-    if (selectedFormat === '1080p') {
+    if (selectedQuality === '1080p') {
       filteredVideo = videoOnlyFormats.filter(f => f.resolution?.includes('1080'));
-    } else if (selectedFormat === '720p') {
+    } else if (selectedQuality === '720p') {
       filteredVideo = videoOnlyFormats.filter(f => f.resolution?.includes('720'));
-    } else if (selectedFormat === '480p') {
+    } else if (selectedQuality === '480p') {
       filteredVideo = videoOnlyFormats.filter(f => f.resolution?.includes('480'));
     }
 
@@ -75,148 +90,141 @@ export function VideoPreview({
     const combinedFormats = video.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none');
     const bestCombined = combinedFormats.sort((a, b) => getSize(b) - getSize(a))[0];
     return bestCombined ? formatBytes(getSize(bestCombined) || null) : null;
-  }, [video.formats, selectedFormat]);
+  }, [video, selectedQuality]);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      className="w-full max-w-2xl bg-bg-secondary rounded-xl border border-border"
+      className="w-full max-w-4xl max-h-[calc(100vh-180px)] glass rounded-2xl overflow-y-auto relative"
     >
-      {/* Thumbnail and basic info */}
-      <div className="flex gap-4 p-4">
-        {video.thumbnail ? (
-          <div className="relative w-40 h-24 rounded-lg overflow-hidden shrink-0 bg-bg-tertiary">
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+        aria-label="Close preview"
+      >
+        <XIcon className="w-5 h-5" />
+      </button>
+
+      {/* Hero layout: side-by-side on larger screens */}
+      <div className="flex flex-col md:flex-row">
+        {/* Large thumbnail */}
+        <div className="relative md:w-1/2 h-48 md:h-auto md:min-h-[200px] bg-bg-tertiary shrink-0">
+          {video.thumbnail ? (
             <img
               src={video.thumbnail}
               alt=""
               className="w-full h-full object-cover"
               loading="lazy"
             />
-            {video.duration !== null && (
-              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 text-xs font-medium bg-black/80 text-white rounded tabular-nums">
-                {formatDuration(video.duration)}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="w-40 h-24 rounded-lg bg-bg-tertiary shrink-0" />
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <h2 className="text-base font-medium text-text-primary line-clamp-2">
-              {video.title}
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-1 rounded hover:bg-bg-tertiary text-text-secondary hover:text-text-primary transition-colors shrink-0"
-              aria-label="Close preview"
-            >
-              <XIcon className="w-5 h-5" />
-            </button>
-          </div>
-
-          {video.channel && (
-            <p className="text-sm text-text-secondary mt-1">{video.channel}</p>
+          ) : (
+            <div className="w-full h-full bg-bg-tertiary" />
           )}
 
-          {video.view_count !== null && (
-            <p className="text-xs text-text-tertiary mt-1">
-              {formatViewCount(video.view_count)}
+          {/* Gradient overlay - top and bottom */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/70" />
+
+          {/* Channel and views - top left */}
+          <div className="absolute top-3 left-3">
+            {video.channel && (
+              <p className="text-sm font-medium text-white/90 drop-shadow-md">{video.channel}</p>
+            )}
+            {video.view_count !== null && (
+              <p className="text-xs text-white/70 drop-shadow-md">
+                {formatViewCount(video.view_count)}
+              </p>
+            )}
+          </div>
+
+          {/* Duration badge - bottom left */}
+          {video.duration !== null && (
+            <span className="absolute bottom-3 left-3 px-2 py-1 text-sm font-medium bg-black/80 text-white rounded-md tabular-nums">
+              {formatDuration(video.duration)}
+            </span>
+          )}
+        </div>
+
+        {/* Content side */}
+        <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0 overflow-hidden">
+          {/* Title */}
+          <h2 className="text-base font-semibold text-text-primary leading-snug mb-3 pr-8 line-clamp-2 whitespace-normal">
+            {video.title}
+          </h2>
+
+          {/* Quality pills */}
+          <div className="mb-2">
+            <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Quality</p>
+            <div className="flex flex-wrap gap-1.5">
+              {qualityPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => setSelectedQuality(preset.id)}
+                  className={cn(
+                    'px-2.5 py-1 text-sm font-medium rounded-lg transition-all',
+                    selectedQuality === preset.id
+                      ? 'bg-accent text-white'
+                      : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/80'
+                  )}
+                >
+                  {preset.shortLabel}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Format pills */}
+          <div className="mb-2">
+            <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Format</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(isAudioOnly ? audioFormats : containerFormats).map((format) => (
+                <button
+                  key={format.id}
+                  onClick={() => isAudioOnly
+                    ? setSelectedAudioFormat(format.id as AudioFormat)
+                    : setSelectedContainer(format.id as ContainerFormat)
+                  }
+                  className={cn(
+                    'px-2.5 py-1 text-sm font-medium rounded-lg transition-all',
+                    (isAudioOnly ? selectedAudioFormat : selectedContainer) === format.id
+                      ? 'bg-accent text-white'
+                      : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/80'
+                  )}
+                >
+                  {format.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Size estimate */}
+          {estimatedSize && (
+            <p className="text-xs text-text-tertiary mb-2">
+              Estimated size: ~{estimatedSize}
             </p>
           )}
-        </div>
-      </div>
 
-      {/* Format selector */}
-      <div className="px-4 pb-4">
-        <div className="relative">
-          <button
-            onClick={() => setShowFormats(!showFormats)}
+          {/* Download button - full width with glow */}
+          <motion.button
+            onClick={() => {
+              const format = isAudioOnly ? selectedAudioFormat : selectedContainer;
+              onDownload(`${selectedQuality}:${format}`);
+            }}
+            disabled={isDownloading}
             className={cn(
-              'w-full flex items-center justify-between gap-2 px-4 py-3',
-              'bg-bg-tertiary rounded-lg border border-border',
-              'hover:border-border-hover transition-colors',
-              'text-left'
+              'w-full mt-auto py-3 px-4 rounded-xl',
+              'btn-gradient text-white font-medium',
+              'flex items-center justify-center gap-2',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
-            aria-expanded={showFormats}
-            aria-haspopup="listbox"
+            whileTap={{ scale: 0.98 }}
           >
-            <div>
-              <span className="text-sm font-medium text-text-primary">
-                {selectedPreset?.label}
-              </span>
-              <span className="text-xs text-text-tertiary ml-2">
-                {selectedPreset?.description}
-                {estimatedSize && ` · ~${estimatedSize}`}
-              </span>
-            </div>
-            <motion.div
-              animate={{ rotate: showFormats ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ChevronDownIcon className="w-5 h-5 text-text-secondary" />
-            </motion.div>
-          </button>
-
-          <AnimatePresence>
-            {showFormats && (
-              <motion.ul
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.15 }}
-                className="absolute top-full left-0 right-0 mt-2 z-10 bg-bg-secondary border border-border rounded-lg overflow-hidden shadow-lg"
-                role="listbox"
-                aria-label="Select format"
-              >
-                {formatPresets.map((preset) => (
-                  <li key={preset.id}>
-                    <button
-                      onClick={() => {
-                        setSelectedFormat(preset.id);
-                        setShowFormats(false);
-                      }}
-                      className={cn(
-                        'w-full px-4 py-3 text-left',
-                        'hover:bg-bg-tertiary transition-colors',
-                        selectedFormat === preset.id && 'bg-accent/10'
-                      )}
-                      role="option"
-                      aria-selected={selectedFormat === preset.id}
-                    >
-                      <span className="text-sm font-medium text-text-primary">
-                        {preset.label}
-                      </span>
-                      <span className="text-xs text-text-tertiary ml-2">
-                        {preset.description}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </motion.ul>
-            )}
-          </AnimatePresence>
+            <DownloadIcon className="w-5 h-5" />
+            <span>{isDownloading ? 'Starting download...' : 'Download'}</span>
+          </motion.button>
         </div>
-
-        {/* Download button */}
-        <motion.button
-          onClick={() => onDownload(selectedFormat)}
-          disabled={isDownloading}
-          className={cn(
-            'w-full mt-3 py-3 px-4 rounded-lg',
-            'bg-accent hover:bg-accent-hover text-white font-medium',
-            'flex items-center justify-center gap-2',
-            'transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-          )}
-          whileTap={{ scale: 0.98 }}
-        >
-          <DownloadIcon className="w-5 h-5" />
-          <span>{isDownloading ? 'Starting download...' : 'Download'}</span>
-        </motion.button>
       </div>
     </motion.div>
   );

@@ -8,8 +8,8 @@ import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './compo
 import { useDownload } from './hooks/useDownload';
 import { useSettings } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
-import { useTheme } from './hooks/useTheme';
 import { getVideoInfo, getYtdlpStatus, installYtdlp, onYtdlpInstallProgress } from './lib/tauri';
+// Dark theme is now the only theme - no light mode support
 import type { VideoInfo, YtDlpStatus, YtDlpInstallProgress } from './lib/types';
 
 const Settings = lazy(() =>
@@ -37,9 +37,6 @@ function App() {
 
   const { config, saveConfig } = useSettings();
   const { toasts, removeToast, success, error } = useToast();
-
-  // Apply theme
-  useTheme(config.theme);
 
   // Check yt-dlp status on mount
   useEffect(() => {
@@ -115,15 +112,20 @@ function App() {
     setVideoInfo(null);
   }, []);
 
+  const activeCount = downloads.filter(d => d.status === 'downloading' || d.status === 'pending').length;
+
   return (
-    <div className="min-h-screen bg-bg-primary flex flex-col">
+    <div className="h-screen bg-bg-primary flex flex-col overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-text-primary tracking-tight">Zinc</h1>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-accent" />
+            <h1 className="text-xl font-semibold text-text-primary tracking-tight">Zinc</h1>
+          </div>
           {hasActiveDownloads && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-accent/20 text-accent rounded-full tabular-nums">
-              {downloads.filter(d => d.status === 'downloading' || d.status === 'pending').length} active
+            <span className="badge-accent px-2.5 py-1 text-xs font-medium rounded-full tabular-nums">
+              {activeCount} active
             </span>
           )}
         </div>
@@ -136,14 +138,14 @@ function App() {
         </button>
       </header>
 
-      {/* Main content */}
+      {/* Main content - wider max-width */}
       <main className="flex-1 flex flex-col items-center px-6 py-8 gap-8 overflow-y-auto">
         {/* yt-dlp setup UI */}
         {ytdlpStatus?.status === 'not_installed' && !isInstalling && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-6 bg-bg-secondary border border-border rounded-xl"
+            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl"
           >
             <div className="flex items-center gap-3 text-text-secondary">
               <DownloadIcon className="w-6 h-6" />
@@ -151,7 +153,7 @@ function App() {
             </div>
             <button
               onClick={handleInstallYtdlp}
-              className="px-6 py-2.5 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+              className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
             >
               Download yt-dlp
             </button>
@@ -163,10 +165,10 @@ function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-6 bg-bg-secondary border border-border rounded-xl"
+            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl"
           >
             <div className="flex items-center gap-3 text-text-secondary">
-              <LoaderIcon className="w-5 h-5 animate-spin" />
+              <LoaderIcon className="w-5 h-5 animate-spin text-accent" />
               <p className="text-sm">Downloading yt-dlp...</p>
             </div>
             {installProgress && (
@@ -192,7 +194,7 @@ function App() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-6 bg-error/10 border border-error/20 rounded-xl"
+            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 bg-error/10 border border-error/20 rounded-2xl"
           >
             <div className="flex items-center gap-3 text-error">
               <AlertCircleIcon className="w-5 h-5 shrink-0" />
@@ -200,7 +202,7 @@ function App() {
             </div>
             <button
               onClick={handleInstallYtdlp}
-              className="px-6 py-2.5 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+              className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
             >
               Retry
             </button>
@@ -209,7 +211,7 @@ function App() {
 
         {/* yt-dlp error status */}
         {ytdlpStatus?.status === 'error' && !installError && (
-          <div className="w-full max-w-2xl flex items-center gap-3 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg text-warning">
+          <div className="w-full max-w-3xl flex items-center gap-3 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg text-warning">
             <AlertCircleIcon className="w-5 h-5 shrink-0" />
             <p className="text-sm">{ytdlpStatus.message}</p>
           </div>
@@ -242,13 +244,27 @@ function App() {
           hasCompletedDownloads={hasCompletedDownloads}
         />
 
-        {/* Empty state */}
-        {downloads.length === 0 && !videoInfo && !isLoadingInfo && (
-          <div className="text-center py-12">
-            <p className="text-text-tertiary text-sm">
-              Paste a video URL above to get started
+        {/* Empty state - welcoming design */}
+        {downloads.length === 0 && !videoInfo && !isLoadingInfo && ytdlpReady && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-center py-16"
+          >
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-bg-secondary border border-border mb-6">
+              <DownloadIcon className="w-7 h-7 text-accent" />
+            </div>
+            <h3 className="text-lg font-medium text-text-primary mb-2">
+              Ready to download
+            </h3>
+            <p className="text-text-secondary text-sm mb-4">
+              Paste a video URL to get started
             </p>
-          </div>
+            <p className="text-text-tertiary text-xs">
+              Tip: Press <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border text-text-secondary">Ctrl+V</kbd> to paste from clipboard
+            </p>
+          </motion.div>
         )}
       </main>
 
