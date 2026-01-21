@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Download, VideoInfo } from '@/lib/types';
+import type { Download, VideoInfo, SubtitleSettings } from '@/lib/types';
 import {
   startDownload as apiStartDownload,
   cancelDownload as apiCancelDownload,
@@ -45,6 +45,7 @@ export function useDownload() {
     async function setupListener() {
       try {
         const fn = await onDownloadProgress((download) => {
+          console.log('[useDownload] Received download-progress event:', download.id, download.status);
           if (mounted) {
             setDownloads(prev => {
               const next = new Map(prev);
@@ -71,13 +72,16 @@ export function useDownload() {
 
   const startDownload = useCallback(async (
     videoInfo: VideoInfo,
-    format: string
+    format: string,
+    subtitleSettings?: SubtitleSettings
   ): Promise<string> => {
     const downloadId = await apiStartDownload(
       videoInfo.url,
       format,
       videoInfo.title,
-      videoInfo.thumbnail
+      videoInfo.thumbnail,
+      subtitleSettings,
+      videoInfo.duration
     );
 
     // Optimistic update
@@ -95,6 +99,9 @@ export function useDownload() {
         output_path: null,
         format,
         error: null,
+        duration: videoInfo.duration,
+        whisper_model: subtitleSettings?.enabled ? subtitleSettings.model : null,
+        transcription_engine: subtitleSettings?.enabled ? subtitleSettings.engine : null,
       });
       return next;
     });

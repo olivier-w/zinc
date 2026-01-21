@@ -25,18 +25,28 @@ export interface VideoInfo {
   url: string;
 }
 
+export interface SubtitleSettings {
+  enabled: boolean;
+  engine: string;  // "whisper_cpp", "moonshine", "parakeet"
+  model: string;
+  language: string; // "auto" or language code like "en", "es"
+}
+
 export interface Download {
   id: string;
   url: string;
   title: string;
   thumbnail: string | null;
-  status: 'pending' | 'downloading' | 'completed' | 'error' | 'cancelled';
+  status: 'pending' | 'downloading' | 'completed' | 'error' | 'cancelled' | 'transcribing' | string;
   progress: number;
   speed: string | null;
   eta: string | null;
   output_path: string | null;
   format: string;
   error: string | null;
+  duration: number | null;
+  whisper_model: string | null;
+  transcription_engine: string | null;
 }
 
 export interface AppConfig {
@@ -44,6 +54,44 @@ export interface AppConfig {
   default_format: string;
   default_quality: string;
   theme: 'system' | 'light' | 'dark';
+  generate_subtitles: boolean;
+  whisper_model: string;
+  transcription_engine: string;
+  transcription_model: string;
+}
+
+// Transcription engine types
+// Rust serde serializes unit variants as strings and struct variants as objects
+export type EngineStatus =
+  | 'Available'
+  | 'NotInstalled'
+  | { Unavailable: { reason: string } };
+
+export interface TranscriptionModel {
+  id: string;
+  name: string;
+  size: string;
+  installed: boolean;
+  speed_gpu: number;
+  speed_cpu: number;
+}
+
+export interface TranscriptionEngine {
+  id: string;
+  name: string;
+  description: string;
+  status: EngineStatus;
+  gpu_required: boolean;
+  gpu_available: boolean;
+  languages: string[];
+  models: TranscriptionModel[];
+}
+
+export interface TranscriptionInstallProgress {
+  downloaded: number;
+  total: number | null;
+  percentage: number;
+  stage: string;
 }
 
 export type FormatPreset = 'best' | '4k' | '2k' | '1080p' | '720p' | '480p' | 'audio' | 'mp3';
@@ -65,4 +113,44 @@ export interface YtDlpInstallProgress {
   downloaded: number;
   total: number | null;
   percentage: number;
+}
+
+export type WhisperStatus =
+  | { status: 'not_installed' }
+  | { status: 'installed'; version: string; path: string }
+  | { status: 'model_missing'; version: string; path: string }
+  | { status: 'error'; message: string };
+
+export interface WhisperModel {
+  id: string;
+  name: string;
+  size: string;
+  installed: boolean;
+}
+
+export interface WhisperInstallProgress {
+  downloaded: number;
+  total: number | null;
+  percentage: number;
+  stage: string;
+}
+
+export interface TranscribeProgress {
+  stage: string;
+  progress: number;
+  message: string;
+}
+
+export interface ParakeetGpuStatus {
+  python_available: boolean;
+  sherpa_onnx_installed: boolean;
+  cuda_dlls_ready: boolean;
+  gpu_available: boolean;
+}
+
+export interface ParakeetGpuSetupProgress {
+  downloaded: number;
+  total: number | null;
+  percentage: number;
+  stage: string;
 }

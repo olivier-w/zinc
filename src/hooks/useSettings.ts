@@ -7,6 +7,10 @@ const defaultConfig: AppConfig = {
   default_format: 'mp4',
   default_quality: 'best',
   theme: 'system',
+  generate_subtitles: false,
+  whisper_model: 'base',
+  transcription_engine: 'whisper_cpp',
+  transcription_model: 'base',
 };
 
 let cachedConfig: AppConfig | null = null;
@@ -73,6 +77,14 @@ export function useSettings() {
     return saveConfig({ theme });
   }, [saveConfig]);
 
+  const setGenerateSubtitles = useCallback((value: boolean) => {
+    return saveConfig({ generate_subtitles: value });
+  }, [saveConfig]);
+
+  const setWhisperModel = useCallback((value: string) => {
+    return saveConfig({ whisper_model: value });
+  }, [saveConfig]);
+
   return {
     config,
     isLoading,
@@ -82,5 +94,7 @@ export function useSettings() {
     setDefaultFormat,
     setDefaultQuality,
     setTheme,
+    setGenerateSubtitles,
+    setWhisperModel,
   };
 }

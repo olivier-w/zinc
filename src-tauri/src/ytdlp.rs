@@ -55,6 +55,9 @@ pub struct DownloadOptions {
     pub output_dir: PathBuf,
     pub filename_template: Option<String>,
     pub container_format: Option<String>,
+    #[serde(default)]
+    pub generate_subtitles: bool,
+    pub whisper_model: Option<String>,
 }
 
 impl Default for DownloadOptions {
@@ -64,6 +67,8 @@ impl Default for DownloadOptions {
             output_dir: dirs::download_dir().unwrap_or_else(|| PathBuf::from(".")),
             filename_template: None,
             container_format: Some("mp4".to_string()),
+            generate_subtitles: false,
+            whisper_model: None,
         }
     }
 }

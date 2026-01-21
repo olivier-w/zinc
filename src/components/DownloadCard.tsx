@@ -1,8 +1,9 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import type { Download } from '@/lib/types';
 import { cn, truncate } from '@/lib/utils';
-import { CheckIcon, XIcon, AlertCircleIcon, FolderIcon, PlayIcon, TrashIcon } from './Icons';
+import { getSpeedMultiplier } from '@/lib/constants';
+import { CheckIcon, XIcon, AlertCircleIcon, FolderIcon, PlayIcon, TrashIcon, SubtitlesIcon, LoaderIcon } from './Icons';
 
 interface DownloadCardProps {
   download: Download;
@@ -30,10 +31,42 @@ export const DownloadCard = memo(function DownloadCard({
     if (download.output_path) onOpenFolder(download.output_path);
   }, [onOpenFolder, download.output_path]);
 
-  const isActive = download.status === 'downloading' || download.status === 'pending';
+  const isDownloading = download.status === 'downloading' || download.status === 'pending';
+  const isTranscribing = download.status === 'transcribing' || download.status.startsWith('transcribing:');
+  const isActive = isDownloading || isTranscribing;
   const isCompleted = download.status === 'completed';
   const isError = download.status === 'error';
   const isCancelled = download.status === 'cancelled';
+
+  // Parse transcription stage from status like "transcribing:extracting"
+  const getTranscribeStage = () => {
+    if (!isTranscribing) return '';
+    const parts = download.status.split(':');
+    if (parts.length > 1) {
+      const stage = parts[1];
+      switch (stage) {
+        case 'extracting': return 'Extracting audio...';
+        case 'transcribing': return 'Transcribing...';
+        case 'embedding': return 'Embedding subtitles...';
+        case 'finalizing': return 'Finalizing...';
+        default: return 'Generating subtitles...';
+      }
+    }
+    return 'Generating subtitles...';
+  };
+
+  // Calculate estimated transcription time
+  const transcriptionEta = useMemo(() => {
+    if (!isTranscribing || !download.duration || !download.whisper_model) return null;
+    // Use engine-specific speed multiplier (assume GPU for parakeet, CPU for others)
+    const engine = download.transcription_engine || 'whisper_cpp';
+    const useGpu = engine === 'parakeet';
+    const multiplier = getSpeedMultiplier(engine, download.whisper_model, useGpu);
+    const seconds = Math.ceil(download.duration / multiplier) + 10; // +10s overhead
+    if (seconds < 60) return `~${seconds}s`;
+    const minutes = Math.ceil(seconds / 60);
+    return `~${minutes} min`;
+  }, [isTranscribing, download.duration, download.whisper_model, download.transcription_engine]);
 
   return (
     <motion.div
@@ -74,7 +107,7 @@ export const DownloadCard = memo(function DownloadCard({
         <div className="absolute inset-0 thumbnail-overlay" />
 
         {/* Progress bar overlaid on thumbnail bottom */}
-        {isActive && (
+        {isDownloading && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
             <motion.div
               className="h-full progress-shimmer"
@@ -84,12 +117,23 @@ export const DownloadCard = memo(function DownloadCard({
             />
           </div>
         )}
+        {isTranscribing && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50 overflow-hidden">
+            <div className="h-full w-full bg-accent/80 animate-pulse" />
+          </div>
+        )}
 
         {/* Status badge - top right */}
         {isCompleted && (
           <div className="absolute top-2 right-2 badge-success px-2 py-1 rounded-md flex items-center gap-1">
             <CheckIcon className="w-3 h-3" />
             <span className="text-xs font-medium">Done</span>
+          </div>
+        )}
+        {isTranscribing && (
+          <div className="absolute top-2 right-2 bg-accent/90 text-white px-2 py-1 rounded-md flex items-center gap-1">
+            <SubtitlesIcon className="w-3 h-3" />
+            <span className="text-xs font-medium">Subtitles</span>
           </div>
         )}
         {isError && (
@@ -142,13 +186,26 @@ export const DownloadCard = memo(function DownloadCard({
         </h3>
 
         {/* Active download info */}
-        {isActive && (
+        {isDownloading && (
           <div className="flex items-center justify-between text-xs text-text-secondary mt-2">
             <span className="tabular-nums font-medium text-accent">{download.progress.toFixed(1)}%</span>
             <span className="flex items-center gap-2">
               {download.speed && <span className="tabular-nums">{download.speed}</span>}
               {download.eta && <span className="tabular-nums text-text-tertiary">ETA {download.eta}</span>}
             </span>
+          </div>
+        )}
+
+        {/* Transcribing info */}
+        {isTranscribing && (
+          <div className="flex items-center justify-between text-xs text-text-secondary mt-2">
+            <div className="flex items-center gap-2">
+              <LoaderIcon className="w-3 h-3 animate-spin text-accent" />
+              <span className="text-accent">{getTranscribeStage()}</span>
+            </div>
+            {transcriptionEta && (
+              <span className="text-text-tertiary tabular-nums">ETA {transcriptionEta}</span>
+            )}
           </div>
         )}
 
@@ -159,9 +216,15 @@ export const DownloadCard = memo(function DownloadCard({
 
         {/* Completed state */}
         {isCompleted && (
-          <p className="text-xs text-text-tertiary">
-            {download.format.toUpperCase()}
-          </p>
+          <>
+            <p className="text-xs text-text-tertiary">
+              {download.format.toUpperCase()}
+            </p>
+            {/* Warning for completed downloads with errors (e.g., subtitle generation failed) */}
+            {download.error && (
+              <p className="mt-1 text-xs text-warning line-clamp-2" title={download.error}>{download.error}</p>
+            )}
+          </>
         )}
 
         {/* Cancelled state */}
@@ -169,8 +232,8 @@ export const DownloadCard = memo(function DownloadCard({
           <p className="text-xs text-text-tertiary">Cancelled</p>
         )}
 
-        {/* Actions - only show for active downloads */}
-        {isActive && (
+        {/* Actions - only show for downloading state (not transcribing) */}
+        {isDownloading && (
           <div className="flex items-center gap-1 mt-2 pt-2 border-t border-border">
             <button
               onClick={handleCancel}

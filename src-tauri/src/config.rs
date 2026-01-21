@@ -7,6 +7,26 @@ pub struct AppConfig {
     pub default_format: String,
     pub default_quality: String,
     pub theme: String,
+    #[serde(default)]
+    pub generate_subtitles: bool,
+    #[serde(default = "default_whisper_model")]
+    pub whisper_model: String,
+    #[serde(default = "default_transcription_engine")]
+    pub transcription_engine: String,
+    #[serde(default = "default_transcription_model")]
+    pub transcription_model: String,
+}
+
+fn default_whisper_model() -> String {
+    "base".to_string()
+}
+
+fn default_transcription_engine() -> String {
+    "whisper_cpp".to_string()
+}
+
+fn default_transcription_model() -> String {
+    "base".to_string()
 }
 
 impl Default for AppConfig {
@@ -20,6 +40,10 @@ impl Default for AppConfig {
             default_format: "mp4".to_string(),
             default_quality: "best".to_string(),
             theme: "system".to_string(),
+            generate_subtitles: false,
+            whisper_model: default_whisper_model(),
+            transcription_engine: default_transcription_engine(),
+            transcription_model: default_transcription_model(),
         }
     }
 }

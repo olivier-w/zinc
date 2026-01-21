@@ -9,9 +9,9 @@ import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './compo
 import { useDownload } from './hooks/useDownload';
 import { useSettings } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
-import { getVideoInfo, getYtdlpStatus, installYtdlp, onYtdlpInstallProgress } from './lib/tauri';
+import { getVideoInfo, getYtdlpStatus, getYtdlpStatusFast, installYtdlp, onYtdlpInstallProgress } from './lib/tauri';
 // Dark theme is now the only theme - no light mode support
-import type { VideoInfo, YtDlpStatus, YtDlpInstallProgress } from './lib/types';
+import type { VideoInfo, YtDlpStatus, YtDlpInstallProgress, SubtitleSettings } from './lib/types';
 
 const Settings = lazy(() =>
   import('./components/Settings').then(m => ({ default: m.Settings }))
@@ -39,10 +39,18 @@ function App() {
   const { config, saveConfig } = useSettings();
   const { toasts, removeToast, success, error } = useToast();
 
-  // Check yt-dlp status on mount
+  // Check yt-dlp status on mount - fast local check first, then background update check
   useEffect(() => {
-    getYtdlpStatus()
-      .then(setYtdlpStatus)
+    getYtdlpStatusFast()
+      .then((status) => {
+        setYtdlpStatus(status);
+        // Check for updates in background if installed
+        if (status.status === 'installed') {
+          getYtdlpStatus()
+            .then(setYtdlpStatus)
+            .catch(() => {}); // Silently ignore update check failures
+        }
+      })
       .catch(() => setYtdlpStatus({ status: 'error', message: 'Failed to check yt-dlp status' }));
   }, []);
 
@@ -97,11 +105,11 @@ function App() {
     }
   }, [error]);
 
-  const handleDownload = useCallback(async (format: string) => {
+  const handleDownload = useCallback(async (format: string, subtitleSettings?: SubtitleSettings) => {
     if (!videoInfo) return;
 
     try {
-      await startDownload(videoInfo, format);
+      await startDownload(videoInfo, format, subtitleSettings);
       success(`Started downloading "${videoInfo.title}"`);
       setVideoInfo(null);
     } catch (err) {
@@ -225,6 +233,9 @@ function App() {
               video={videoInfo}
               onDownload={handleDownload}
               onClose={handleClosePreview}
+              defaultSubtitlesEnabled={config?.generate_subtitles ?? false}
+              transcriptionEngine={config?.transcription_engine ?? 'whisper_cpp'}
+              transcriptionModel={config?.transcription_model ?? 'base'}
             />
           )}
         </AnimatePresence>

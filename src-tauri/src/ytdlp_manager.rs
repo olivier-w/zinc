@@ -95,7 +95,10 @@ impl YtDlpManager {
 
     /// Fetch the latest version from GitHub API
     pub async fn get_latest_version() -> Result<String, String> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
         let response = client
             .get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
             .header("User-Agent", "Zinc-App")
@@ -151,6 +154,27 @@ impl YtDlpManager {
         YtDlpStatus::Installed {
             version,
             path: binary_path.to_string_lossy().to_string(),
+        }
+    }
+
+    /// Fast status check - local only, no network calls
+    /// Use this for initial UI render to avoid blocking on GitHub API
+    pub async fn check_status_fast() -> YtDlpStatus {
+        let binary_path = match Self::get_binary_path() {
+            Ok(p) => p,
+            Err(e) => return YtDlpStatus::Error { message: e },
+        };
+
+        if !binary_path.exists() {
+            return YtDlpStatus::NotInstalled;
+        }
+
+        match Self::get_installed_version().await {
+            Ok(version) => YtDlpStatus::Installed {
+                version,
+                path: binary_path.to_string_lossy().to_string(),
+            },
+            Err(e) => YtDlpStatus::Error { message: e },
         }
     }
 

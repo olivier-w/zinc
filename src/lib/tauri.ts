@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress } from './types';
+import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, WhisperModel, WhisperInstallProgress, TranscribeProgress, SubtitleSettings, TranscriptionEngine, TranscriptionModel, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress } from './types';
 
 export async function checkYtdlp(): Promise<boolean> {
   return invoke<boolean>('check_ytdlp');
@@ -15,9 +15,11 @@ export async function startDownload(
   url: string,
   format: string,
   title: string,
-  thumbnail: string | null
+  thumbnail: string | null,
+  subtitleSettings?: SubtitleSettings | null,
+  duration?: number | null,
 ): Promise<string> {
-  return invoke<string>('start_download', { url, format, title, thumbnail });
+  return invoke<string>('start_download', { url, format, title, thumbnail, subtitleSettings, duration });
 }
 
 export async function cancelDownload(downloadId: string): Promise<void> {
@@ -79,6 +81,10 @@ export async function getYtdlpStatus(): Promise<YtDlpStatus> {
   return invoke<YtDlpStatus>('get_ytdlp_status');
 }
 
+export async function getYtdlpStatusFast(): Promise<YtDlpStatus> {
+  return invoke<YtDlpStatus>('get_ytdlp_status_fast');
+}
+
 export async function installYtdlp(): Promise<string> {
   return invoke<string>('install_ytdlp');
 }
@@ -95,6 +101,96 @@ export function onYtdlpInstallProgress(
   callback: (progress: YtDlpInstallProgress) => void
 ): Promise<UnlistenFn> {
   return listen<YtDlpInstallProgress>('ytdlp-install-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// Whisper manager functions
+
+export async function getWhisperStatus(): Promise<WhisperStatus> {
+  return invoke<WhisperStatus>('get_whisper_status');
+}
+
+export async function installWhisper(): Promise<string> {
+  return invoke<string>('install_whisper');
+}
+
+export async function downloadWhisperModel(model: string): Promise<void> {
+  return invoke<void>('download_whisper_model', { model });
+}
+
+export async function getAvailableWhisperModels(): Promise<WhisperModel[]> {
+  return invoke<WhisperModel[]>('get_available_whisper_models');
+}
+
+export async function checkFfmpeg(): Promise<boolean> {
+  return invoke<boolean>('check_ffmpeg');
+}
+
+export function onWhisperInstallProgress(
+  callback: (progress: WhisperInstallProgress) => void
+): Promise<UnlistenFn> {
+  return listen<WhisperInstallProgress>('whisper-install-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+export function onTranscribeProgress(
+  callback: (progress: TranscribeProgress) => void
+): Promise<UnlistenFn> {
+  return listen<TranscribeProgress>('transcribe-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// Transcription engine functions
+
+export async function getTranscriptionEngines(): Promise<TranscriptionEngine[]> {
+  return invoke<TranscriptionEngine[]>('get_transcription_engines');
+}
+
+export async function getEngineModels(engineId: string): Promise<TranscriptionModel[]> {
+  return invoke<TranscriptionModel[]>('get_engine_models', { engineId });
+}
+
+export async function installTranscriptionEngine(engineId: string): Promise<void> {
+  return invoke<void>('install_transcription_engine', { engineId });
+}
+
+export async function downloadTranscriptionModel(engineId: string, modelId: string): Promise<void> {
+  return invoke<void>('download_transcription_model', { engineId, modelId });
+}
+
+export async function getTranscriptionSpeedMultiplier(
+  engineId: string,
+  modelId: string,
+  useGpu: boolean
+): Promise<number> {
+  return invoke<number>('get_transcription_speed_multiplier', { engineId, modelId, useGpu });
+}
+
+export function onTranscriptionInstallProgress(
+  callback: (progress: TranscriptionInstallProgress) => void
+): Promise<UnlistenFn> {
+  return listen<TranscriptionInstallProgress>('transcription-install-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// Parakeet GPU setup functions
+
+export async function checkParakeetGpuStatus(): Promise<ParakeetGpuStatus> {
+  return invoke<ParakeetGpuStatus>('check_parakeet_gpu_status');
+}
+
+export async function setupParakeetGpu(): Promise<void> {
+  return invoke<void>('setup_parakeet_gpu');
+}
+
+export function onParakeetGpuSetupProgress(
+  callback: (progress: ParakeetGpuSetupProgress) => void
+): Promise<UnlistenFn> {
+  return listen<ParakeetGpuSetupProgress>('parakeet-gpu-setup-progress', (event) => {
     callback(event.payload);
   });
 }

@@ -1,15 +1,18 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import type { VideoInfo, FormatPreset } from '@/lib/types';
+import type { VideoInfo, FormatPreset, SubtitleSettings } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
-import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
-import { DownloadIcon, XIcon } from './Icons';
+import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, SUBTITLE_LANGUAGES, TRANSCRIPTION_ENGINES, getSpeedMultiplier, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
+import { DownloadIcon, XIcon, ChevronDownIcon } from './Icons';
 
 interface VideoPreviewProps {
   video: VideoInfo;
-  onDownload: (format: string) => void;
+  onDownload: (format: string, subtitleSettings?: SubtitleSettings) => void;
   onClose: () => void;
   isDownloading?: boolean;
+  defaultSubtitlesEnabled?: boolean;
+  transcriptionEngine?: string;
+  transcriptionModel?: string;
 }
 
 export function VideoPreview({
@@ -17,10 +20,16 @@ export function VideoPreview({
   onDownload,
   onClose,
   isDownloading = false,
+  defaultSubtitlesEnabled = false,
+  transcriptionEngine = 'whisper_cpp',
+  transcriptionModel = 'base',
 }: VideoPreviewProps) {
   const [selectedQuality, setSelectedQuality] = useState<FormatPreset>('best');
   const [selectedContainer, setSelectedContainer] = useState<VideoFormatId>('original');
   const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormatId>('original');
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(defaultSubtitlesEnabled);
+  const [subtitleLanguage, setSubtitleLanguage] = useState('auto');
+  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
 
   const isAudioOnly = selectedQuality === 'audio';
 
@@ -67,6 +76,33 @@ export function VideoPreview({
     const bestCombined = combinedFormats.sort((a, b) => getSize(b) - getSize(a))[0];
     return bestCombined ? formatBytes(getSize(bestCombined) || null) : null;
   }, [video, selectedQuality]);
+
+  // Calculate estimated transcription time based on selected engine
+  const transcriptionEta = useMemo(() => {
+    if (!subtitlesEnabled || !video.duration || isAudioOnly) return null;
+
+    // Get speed multiplier for the selected engine and model
+    // Parakeet requires GPU, so assume GPU for it; others use CPU
+    const useGpu = transcriptionEngine === 'parakeet';
+    const multiplier = getSpeedMultiplier(transcriptionEngine, transcriptionModel, useGpu);
+    const seconds = Math.ceil(video.duration / multiplier) + 10; // +10s overhead
+
+    if (seconds < 60) return `~${seconds}s`;
+    const minutes = Math.ceil(seconds / 60);
+    return `~${minutes} min`;
+  }, [subtitlesEnabled, video.duration, transcriptionEngine, transcriptionModel, isAudioOnly]);
+
+  // Get engine display name
+  const engineDisplayName = useMemo(() => {
+    const engine = TRANSCRIPTION_ENGINES.find(e => e.id === transcriptionEngine);
+    const model = engine?.models.find(m => m.id === transcriptionModel);
+    if (engine && model) {
+      return `${engine.name} (${model.name})`;
+    }
+    return `${transcriptionEngine} (${transcriptionModel})`;
+  }, [transcriptionEngine, transcriptionModel]);
+
+  const selectedLanguageName = SUBTITLE_LANGUAGES.find(l => l.code === subtitleLanguage)?.name || 'Auto-detect';
 
   return (
     <motion.div
@@ -182,11 +218,85 @@ export function VideoPreview({
             </p>
           )}
 
+          {/* Subtitles section - only for video formats */}
+          {!isAudioOnly && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs text-text-tertiary uppercase tracking-wide">Subtitles</p>
+                <button
+                  onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
+                  className={cn(
+                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                    subtitlesEnabled ? 'bg-accent' : 'bg-bg-tertiary'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                      subtitlesEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                    )}
+                  />
+                </button>
+              </div>
+
+              {subtitlesEnabled && (
+                <div className="px-3 py-2 rounded-lg bg-bg-tertiary/50 space-y-2">
+                  {/* Language dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-sm rounded-md bg-bg-secondary hover:bg-bg-secondary/80 transition-colors"
+                    >
+                      <span className="text-text-secondary">{selectedLanguageName}</span>
+                      <ChevronDownIcon className={cn(
+                        'w-4 h-4 text-text-tertiary transition-transform',
+                        isLanguageDropdownOpen && 'rotate-180'
+                      )} />
+                    </button>
+
+                    {isLanguageDropdownOpen && (
+                      <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-lg">
+                        {SUBTITLE_LANGUAGES.map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              setSubtitleLanguage(lang.code);
+                              setIsLanguageDropdownOpen(false);
+                            }}
+                            className={cn(
+                              'w-full px-3 py-1.5 text-sm text-left hover:bg-bg-tertiary transition-colors',
+                              subtitleLanguage === lang.code ? 'text-accent' : 'text-text-secondary'
+                            )}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ETA display */}
+                  {transcriptionEta && (
+                    <p className="text-xs text-text-tertiary">
+                      Est. time: {transcriptionEta} ({engineDisplayName})
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Download button - full width with glow */}
           <motion.button
             onClick={() => {
               const format = isAudioOnly ? selectedAudioFormat : selectedContainer;
-              onDownload(`${selectedQuality}:${format}`);
+              const settings: SubtitleSettings | undefined = !isAudioOnly ? {
+                enabled: subtitlesEnabled,
+                engine: transcriptionEngine,
+                model: transcriptionModel,
+                language: subtitleLanguage,
+              } : undefined;
+              onDownload(`${selectedQuality}:${format}`, settings);
             }}
             disabled={isDownloading}
             className={cn(

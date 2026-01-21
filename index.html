@@ -9,9 +9,39 @@
       /* Prevent FOUC */
       html { background-color: #0a0a0a; }
       html.light { background-color: #fafafa; }
+      /* Initial loader - shows before React */
+      #initial-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0a0a0a;
+        z-index: 9999;
+        transition: opacity 0.15s ease-out;
+      }
+      #initial-loader.hidden { opacity: 0; pointer-events: none; }
+      .loader-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #ef4444;
+        margin: 0 3px;
+        animation: pulse 1s ease-in-out infinite;
+      }
+      .loader-dot:nth-child(2) { animation-delay: 0.15s; }
+      .loader-dot:nth-child(3) { animation-delay: 0.3s; }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1); }
+      }
     </style>
   </head>
   <body>
+    <div id="initial-loader">
+      <div class="loader-dot"></div>
+      <div class="loader-dot"></div>
+      <div class="loader-dot"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
