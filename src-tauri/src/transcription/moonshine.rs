@@ -218,26 +218,37 @@ impl TranscriptionEngine for MoonshineEngine {
             })
             .await;
 
-        // Get sherpa-onnx binary
-        let sherpa_binary = SherpaManager::get_binary_path()?;
-        if !sherpa_binary.exists() {
-            return Err("sherpa-onnx is not installed. Please install it first.".to_string());
-        }
-
         // Generate output SRT path
         let srt_path = audio_path.with_extension("srt");
 
-        // Build sherpa-onnx-offline command for Moonshine
-        // Note: sherpa-onnx requires --option=value format, not --option value
-        let mut cmd = Command::new(&sherpa_binary);
+        // Use Python script for transcription (handles audio chunking for long files)
+        // The Moonshine model has context length limits and produces empty output on long audio
+        // when processed in one shot. The Python script chunks audio into 30-second segments.
+        let bin_dir = SherpaManager::get_bin_dir()?;
+        let script_path = bin_dir.join("transcribe_moonshine.py");
+        let script_content = include_str!("../../resources/transcribe_moonshine.py");
+        fs::write(&script_path, script_content)
+            .await
+            .map_err(|e| format!("Failed to write Python script: {}", e))?;
+
+        // Use forward slashes for paths on Windows for compatibility
+        let preprocessor_str = preprocessor.to_str().unwrap().replace('\\', "/");
+        let encoder_str = encoder.to_str().unwrap().replace('\\', "/");
+        let uncached_decoder_str = uncached_decoder.to_str().unwrap().replace('\\', "/");
+        let cached_decoder_str = cached_decoder.to_str().unwrap().replace('\\', "/");
+        let tokens_str = tokens.to_str().unwrap().replace('\\', "/");
+        let audio_str = audio_path.to_str().unwrap().replace('\\', "/");
+
+        let mut cmd = Command::new("python");
         cmd.args([
-            &format!("--moonshine-preprocessor={}", preprocessor.to_str().unwrap()),
-            &format!("--moonshine-encoder={}", encoder.to_str().unwrap()),
-            &format!("--moonshine-uncached-decoder={}", uncached_decoder.to_str().unwrap()),
-            &format!("--moonshine-cached-decoder={}", cached_decoder.to_str().unwrap()),
-            &format!("--tokens={}", tokens.to_str().unwrap()),
+            script_path.to_str().unwrap(),
+            &format!("--preprocessor={}", preprocessor_str),
+            &format!("--encoder={}", encoder_str),
+            &format!("--uncached-decoder={}", uncached_decoder_str),
+            &format!("--cached-decoder={}", cached_decoder_str),
+            &format!("--tokens={}", tokens_str),
             "--num-threads=4",
-            audio_path.to_str().unwrap(),
+            &audio_str,
         ]);
 
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -245,66 +256,52 @@ impl TranscriptionEngine for MoonshineEngine {
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-        log::info!("Running sherpa-onnx-offline for Moonshine transcription");
+        log::info!("Running Python Moonshine transcription script");
 
         let output = cmd
             .output()
             .await
-            .map_err(|e| format!("Failed to run sherpa-onnx: {}", e))?;
+            .map_err(|e| format!("Failed to run Python transcription script: {}", e))?;
 
         let stdout_str = String::from_utf8_lossy(&output.stdout);
         let stderr_str = String::from_utf8_lossy(&output.stderr);
 
-        log::info!("sherpa-onnx stdout ({} bytes): {}", output.stdout.len(), stdout_str);
-        log::info!("sherpa-onnx stderr ({} bytes): {}", output.stderr.len(), stderr_str);
+        log::info!("Python script exit status: {:?}", output.status);
+        log::info!("Python script stdout ({} bytes): {}", output.stdout.len(), &stdout_str.chars().take(500).collect::<String>());
+        log::info!("Python script stderr ({} bytes): {}", output.stderr.len(), &stderr_str.chars().take(500).collect::<String>());
 
+        // Python script outputs JSON to stdout
+        // Find the JSON line (should be the last non-empty line)
+        let mut json_line: Option<&str> = None;
+        for line in stdout_str.lines().rev() {
+            let line = line.trim();
+            if line.starts_with('{') && line.contains("\"text\":") {
+                json_line = Some(line);
+                break;
+            }
+        }
+
+        let transcript = if let Some(json_str) = json_line {
+            log::info!("Found JSON output: {}...", &json_str.chars().take(200).collect::<String>());
+            Self::parse_json_text(json_str)
+        } else {
+            log::warn!("No JSON output found in stdout");
+            String::new()
+        };
+
+        // If process failed, return error with details
         if !output.status.success() {
             return Err(format!(
-                "sherpa-onnx transcription failed: {}",
-                stderr_str.lines().next().unwrap_or("unknown error")
+                "Transcription failed (exit code {:?}): {}",
+                output.status.code(),
+                stderr_str.lines().last().unwrap_or("unknown error")
             ));
         }
 
-        // Parse transcript - sherpa-onnx may output to stdout OR stderr
-        let mut transcript = String::new();
-
-        // Combine stdout and stderr since sherpa-onnx might output to either
-        let combined_output = format!("{}\n{}", stdout_str, stderr_str);
-
-        log::info!("stdout len: {}, stderr len: {}", stdout_str.len(), stderr_str.len());
-        log::info!("combined first 300 chars: '{}'", &combined_output.chars().take(300).collect::<String>());
-
-        // Try to find JSON with "text" field
-        if let Some(text_start) = combined_output.find("\"text\":") {
-            log::info!("Found '\"text\":' at position {}", text_start);
-            let after_text = &combined_output[text_start + 7..];
-            // Find the string value - skip whitespace, find opening quote
-            if let Some(quote_start) = after_text.find('"') {
-                let string_content = &after_text[quote_start + 1..];
-                // Find closing quote (not escaped)
-                let mut end_pos = 0;
-                let mut escaped = false;
-                for (i, c) in string_content.char_indices() {
-                    if escaped {
-                        escaped = false;
-                        continue;
-                    }
-                    if c == '\\' {
-                        escaped = true;
-                        continue;
-                    }
-                    if c == '"' {
-                        end_pos = i;
-                        break;
-                    }
-                }
-                if end_pos > 0 {
-                    transcript = string_content[..end_pos].to_string();
-                    log::info!("Extracted transcript: '{}'", &transcript.chars().take(200).collect::<String>());
-                }
-            }
-        } else {
-            log::warn!("No '\"text\":' found in output");
+        // If no transcript produced, return error
+        let transcript = transcript.trim();
+        if transcript.is_empty() {
+            return Err("Transcription produced no text. The audio may be silent, corrupted, or in an unsupported format.".to_string());
         }
 
         log::info!("Final transcript ({} chars): '{}'", transcript.len(), &transcript.chars().take(200).collect::<String>());
@@ -321,7 +318,7 @@ impl TranscriptionEngine for MoonshineEngine {
         let duration = Self::get_audio_duration(audio_path).await.unwrap_or(60.0);
 
         // Generate SRT file
-        let srt_content = Self::generate_srt(&transcript.trim(), duration);
+        let srt_content = Self::generate_srt(transcript, duration);
         fs::write(&srt_path, srt_content)
             .await
             .map_err(|e| format!("Failed to write SRT file: {}", e))?;
@@ -339,6 +336,36 @@ impl TranscriptionEngine for MoonshineEngine {
 }
 
 impl MoonshineEngine {
+    /// Parse the "text" field from JSON output
+    fn parse_json_text(json_str: &str) -> String {
+        if let Some(text_start) = json_str.find("\"text\":") {
+            let after_text = &json_str[text_start + 7..];
+            if let Some(quote_start) = after_text.find('"') {
+                let string_content = &after_text[quote_start + 1..];
+                let mut end_pos = 0;
+                let mut escaped = false;
+                for (i, c) in string_content.char_indices() {
+                    if escaped {
+                        escaped = false;
+                        continue;
+                    }
+                    if c == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if c == '"' {
+                        end_pos = i;
+                        break;
+                    }
+                }
+                if end_pos > 0 {
+                    return string_content[..end_pos].to_string();
+                }
+            }
+        }
+        String::new()
+    }
+
     /// Get audio duration using ffprobe
     async fn get_audio_duration(audio_path: &Path) -> Option<f64> {
         let mut cmd = Command::new(if cfg!(target_os = "windows") {
@@ -365,12 +392,8 @@ impl MoonshineEngine {
     }
 
     /// Generate SRT content from transcription text
+    /// Note: Caller must ensure text is not empty
     fn generate_srt(text: &str, duration_secs: f64) -> String {
-        let text = text.trim();
-        if text.is_empty() {
-            return String::new();
-        }
-
         // Split into sentences or chunks
         let sentences: Vec<&str> = text
             .split(|c| c == '.' || c == '!' || c == '?')

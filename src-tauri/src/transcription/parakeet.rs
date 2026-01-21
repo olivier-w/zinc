@@ -556,13 +556,18 @@ impl TranscriptionEngine for ParakeetEngine {
             (String::new(), Vec::new(), Vec::new())
         };
 
-        // If no transcript and process failed, return error
-        if transcript.is_empty() && !output.status.success() {
+        // If process failed, return error with details
+        if !output.status.success() {
             return Err(format!(
                 "Transcription failed (exit code {:?}): {}",
                 output.status.code(),
                 stderr_str.lines().last().unwrap_or("unknown error")
             ));
+        }
+
+        // If no transcript produced, return error
+        if transcript.trim().is_empty() {
+            return Err("Transcription produced no text. The audio may be silent, corrupted, or in an unsupported format.".to_string());
         }
 
         log::info!("Final transcript ({} chars), {} timestamps, {} tokens",

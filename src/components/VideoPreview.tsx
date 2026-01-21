@@ -255,7 +255,7 @@ export function VideoPreview({
                     </button>
 
                     {isLanguageDropdownOpen && (
-                      <div className="absolute z-20 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-lg">
+                      <div className="absolute z-50 bottom-full left-0 right-0 mb-1 max-h-40 overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-lg">
                         {SUBTITLE_LANGUAGES.map((lang) => (
                           <button
                             key={lang.code}

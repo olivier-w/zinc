@@ -359,6 +359,15 @@ impl TranscriptionEngine for WhisperCppEngine {
             return Err("Whisper did not generate SRT file".to_string());
         }
 
+        // Verify SRT has content
+        let srt_content = fs::read_to_string(&generated_srt)
+            .await
+            .map_err(|e| format!("Failed to read SRT file: {}", e))?;
+        if srt_content.trim().is_empty() {
+            let _ = fs::remove_dir_all(&temp_dir).await;
+            return Err("Transcription produced no text. The audio may be silent, corrupted, or in an unsupported format.".to_string());
+        }
+
         // Move SRT to final location (next to audio file)
         let final_srt = audio_path.with_extension("srt");
         fs::rename(&generated_srt, &final_srt)
