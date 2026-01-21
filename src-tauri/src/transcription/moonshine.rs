@@ -210,93 +210,55 @@ impl TranscriptionEngine for MoonshineEngine {
             }
         }
 
-        let _ = progress_tx
-            .send(TranscribeProgress {
-                stage: "transcribing".to_string(),
-                progress: 10.0,
-                message: "Running transcription...".to_string(),
-            })
-            .await;
+        // Get sherpa-onnx binary
+        let sherpa_binary = SherpaManager::get_binary_path()?;
+        if !sherpa_binary.exists() {
+            return Err("sherpa-onnx is not installed. Please install it first.".to_string());
+        }
 
         // Generate output SRT path
         let srt_path = audio_path.with_extension("srt");
 
-        // Use Python script for transcription (handles audio chunking for long files)
-        // The Moonshine model has context length limits and produces empty output on long audio
-        // when processed in one shot. The Python script chunks audio into 30-second segments.
-        let bin_dir = SherpaManager::get_bin_dir()?;
-        let script_path = bin_dir.join("transcribe_moonshine.py");
-        let script_content = include_str!("../../resources/transcribe_moonshine.py");
-        fs::write(&script_path, script_content)
-            .await
-            .map_err(|e| format!("Failed to write Python script: {}", e))?;
+        // Get audio duration to determine if we need chunking
+        let duration = Self::get_audio_duration(audio_path).await.unwrap_or(60.0);
 
-        // Use forward slashes for paths on Windows for compatibility
-        let preprocessor_str = preprocessor.to_str().unwrap().replace('\\', "/");
-        let encoder_str = encoder.to_str().unwrap().replace('\\', "/");
-        let uncached_decoder_str = uncached_decoder.to_str().unwrap().replace('\\', "/");
-        let cached_decoder_str = cached_decoder.to_str().unwrap().replace('\\', "/");
-        let tokens_str = tokens.to_str().unwrap().replace('\\', "/");
-        let audio_str = audio_path.to_str().unwrap().replace('\\', "/");
+        // Moonshine has context length limits - chunk long audio into 30-second segments
+        const CHUNK_DURATION: f64 = 30.0;
 
-        let mut cmd = Command::new("python");
-        cmd.args([
-            script_path.to_str().unwrap(),
-            &format!("--preprocessor={}", preprocessor_str),
-            &format!("--encoder={}", encoder_str),
-            &format!("--uncached-decoder={}", uncached_decoder_str),
-            &format!("--cached-decoder={}", cached_decoder_str),
-            &format!("--tokens={}", tokens_str),
-            "--num-threads=4",
-            &audio_str,
-        ]);
-
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-
-        log::info!("Running Python Moonshine transcription script");
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run Python transcription script: {}", e))?;
-
-        let stdout_str = String::from_utf8_lossy(&output.stdout);
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-        log::info!("Python script exit status: {:?}", output.status);
-        log::info!("Python script stdout ({} bytes): {}", output.stdout.len(), &stdout_str.chars().take(500).collect::<String>());
-        log::info!("Python script stderr ({} bytes): {}", output.stderr.len(), &stderr_str.chars().take(500).collect::<String>());
-
-        // Python script outputs JSON to stdout
-        // Find the JSON line (should be the last non-empty line)
-        let mut json_line: Option<&str> = None;
-        for line in stdout_str.lines().rev() {
-            let line = line.trim();
-            if line.starts_with('{') && line.contains("\"text\":") {
-                json_line = Some(line);
-                break;
-            }
-        }
-
-        let transcript = if let Some(json_str) = json_line {
-            log::info!("Found JSON output: {}...", &json_str.chars().take(200).collect::<String>());
-            Self::parse_json_text(json_str)
+        let transcript = if duration > CHUNK_DURATION {
+            // Split audio into chunks and transcribe each
+            Self::transcribe_chunked(
+                audio_path,
+                &sherpa_binary,
+                &preprocessor,
+                &encoder,
+                &uncached_decoder,
+                &cached_decoder,
+                &tokens,
+                duration,
+                CHUNK_DURATION,
+                &progress_tx,
+            ).await?
         } else {
-            log::warn!("No JSON output found in stdout");
-            String::new()
-        };
+            // Short audio - transcribe directly
+            let _ = progress_tx
+                .send(TranscribeProgress {
+                    stage: "transcribing".to_string(),
+                    progress: 10.0,
+                    message: "Running transcription...".to_string(),
+                })
+                .await;
 
-        // If process failed, return error with details
-        if !output.status.success() {
-            return Err(format!(
-                "Transcription failed (exit code {:?}): {}",
-                output.status.code(),
-                stderr_str.lines().last().unwrap_or("unknown error")
-            ));
-        }
+            Self::transcribe_single(
+                audio_path,
+                &sherpa_binary,
+                &preprocessor,
+                &encoder,
+                &uncached_decoder,
+                &cached_decoder,
+                &tokens,
+            ).await?
+        };
 
         // If no transcript produced, return error
         let transcript = transcript.trim();
@@ -313,9 +275,6 @@ impl TranscriptionEngine for MoonshineEngine {
                 message: "Generating subtitles...".to_string(),
             })
             .await;
-
-        // Get audio duration for SRT timing
-        let duration = Self::get_audio_duration(audio_path).await.unwrap_or(60.0);
 
         // Generate SRT file
         let srt_content = Self::generate_srt(transcript, duration);
@@ -336,6 +295,173 @@ impl TranscriptionEngine for MoonshineEngine {
 }
 
 impl MoonshineEngine {
+    /// Transcribe a single audio file (for short audio under chunk duration)
+    async fn transcribe_single(
+        audio_path: &Path,
+        sherpa_binary: &Path,
+        preprocessor: &Path,
+        encoder: &Path,
+        uncached_decoder: &Path,
+        cached_decoder: &Path,
+        tokens: &Path,
+    ) -> Result<String, String> {
+        let mut cmd = Command::new(sherpa_binary);
+        cmd.args([
+            &format!("--moonshine-preprocessor={}", preprocessor.to_str().unwrap()),
+            &format!("--moonshine-encoder={}", encoder.to_str().unwrap()),
+            &format!("--moonshine-uncached-decoder={}", uncached_decoder.to_str().unwrap()),
+            &format!("--moonshine-cached-decoder={}", cached_decoder.to_str().unwrap()),
+            &format!("--tokens={}", tokens.to_str().unwrap()),
+            "--num-threads=4",
+            audio_path.to_str().unwrap(),
+        ]);
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+
+        log::info!("Running sherpa-onnx-offline for Moonshine transcription");
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run sherpa-onnx: {}", e))?;
+
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        log::info!("sherpa-onnx stdout ({} bytes)", output.stdout.len());
+        log::info!("sherpa-onnx stderr ({} bytes)", output.stderr.len());
+
+        if !output.status.success() {
+            return Err(format!(
+                "sherpa-onnx transcription failed: {}",
+                stderr_str.lines().next().unwrap_or("unknown error")
+            ));
+        }
+
+        // Parse transcript from combined output
+        let combined_output = format!("{}\n{}", stdout_str, stderr_str);
+        Ok(Self::parse_json_text(&combined_output))
+    }
+
+    /// Transcribe long audio by splitting into chunks with ffmpeg
+    async fn transcribe_chunked(
+        audio_path: &Path,
+        sherpa_binary: &Path,
+        preprocessor: &Path,
+        encoder: &Path,
+        uncached_decoder: &Path,
+        cached_decoder: &Path,
+        tokens: &Path,
+        total_duration: f64,
+        chunk_duration: f64,
+        progress_tx: &mpsc::Sender<TranscribeProgress>,
+    ) -> Result<String, String> {
+        let num_chunks = (total_duration / chunk_duration).ceil() as usize;
+        log::info!(
+            "Splitting {:.1}s audio into {} chunks of {:.0}s each",
+            total_duration,
+            num_chunks,
+            chunk_duration
+        );
+
+        // Create temp directory for chunks
+        let temp_dir = audio_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(".zinc_moonshine_chunks");
+        fs::create_dir_all(&temp_dir)
+            .await
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+
+        let mut all_transcripts = Vec::new();
+
+        for i in 0..num_chunks {
+            let start_time = i as f64 * chunk_duration;
+            let chunk_path = temp_dir.join(format!("chunk_{:03}.wav", i));
+
+            let progress = 10.0 + (70.0 * i as f64 / num_chunks as f64);
+            let _ = progress_tx
+                .send(TranscribeProgress {
+                    stage: "transcribing".to_string(),
+                    progress,
+                    message: format!("Processing chunk {}/{}...", i + 1, num_chunks),
+                })
+                .await;
+
+            // Extract chunk using ffmpeg
+            let mut ffmpeg_cmd = Command::new(if cfg!(target_os = "windows") {
+                "ffmpeg.exe"
+            } else {
+                "ffmpeg"
+            });
+
+            ffmpeg_cmd.args([
+                "-y",
+                "-i", audio_path.to_str().unwrap(),
+                "-ss", &format!("{:.3}", start_time),
+                "-t", &format!("{:.3}", chunk_duration),
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                chunk_path.to_str().unwrap(),
+            ]);
+
+            ffmpeg_cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+            #[cfg(target_os = "windows")]
+            ffmpeg_cmd.creation_flags(0x08000000);
+
+            let ffmpeg_output = ffmpeg_cmd
+                .output()
+                .await
+                .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+            if !ffmpeg_output.status.success() {
+                let _ = fs::remove_dir_all(&temp_dir).await;
+                return Err(format!(
+                    "ffmpeg chunk extraction failed: {}",
+                    String::from_utf8_lossy(&ffmpeg_output.stderr)
+                ));
+            }
+
+            // Transcribe this chunk
+            let chunk_transcript = Self::transcribe_single(
+                &chunk_path,
+                sherpa_binary,
+                preprocessor,
+                encoder,
+                uncached_decoder,
+                cached_decoder,
+                tokens,
+            ).await;
+
+            // Clean up chunk file immediately
+            let _ = fs::remove_file(&chunk_path).await;
+
+            match chunk_transcript {
+                Ok(text) => {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        log::info!("Chunk {}: '{}'", i + 1, &text.chars().take(50).collect::<String>());
+                        all_transcripts.push(text.to_string());
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Chunk {} failed: {}", i + 1, e);
+                    // Continue with other chunks
+                }
+            }
+        }
+
+        // Clean up temp directory
+        let _ = fs::remove_dir_all(&temp_dir).await;
+
+        Ok(all_transcripts.join(" "))
+    }
+
     /// Parse the "text" field from JSON output
     fn parse_json_text(json_str: &str) -> String {
         if let Some(text_start) = json_str.find("\"text\":") {
