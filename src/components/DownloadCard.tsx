@@ -68,10 +68,15 @@ export const DownloadCard = memo(function DownloadCard({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      initial={{ opacity: 0, y: 10, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      transition={{
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        delay: 0.05,
+      }}
       className={cn(
         'group relative rounded-xl overflow-hidden card-lift',
         'bg-bg-secondary border transition-all',
@@ -140,12 +145,12 @@ export const DownloadCard = memo(function DownloadCard({
           </div>
         )}
 
-        {/* Hover action overlay - for non-active downloads */}
+        {/* Action overlay - visible on hover (desktop) or always (touch devices) */}
         {!isActive && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: isHovered ? 1 : 0 }}
-            className="absolute inset-0 bg-black/60 flex items-center justify-center gap-3"
+            className="absolute inset-0 bg-black/60 flex items-center justify-center gap-3 touch-action-visible"
           >
             {isCompleted && download.output_path && (
               <>

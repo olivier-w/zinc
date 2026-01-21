@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { URLInput } from './components/URLInput';
 import { VideoPreview } from './components/VideoPreview';
 import { DownloadList } from './components/DownloadList';
@@ -226,28 +226,30 @@ function App() {
           disabled={!ytdlpReady || isInstalling}
         />
 
-        {/* Video Preview */}
-        <AnimatePresence mode="wait">
-          {videoInfo && (
-            <VideoPreview
-              video={videoInfo}
-              onDownload={handleDownload}
-              onClose={handleClosePreview}
-              defaultSubtitlesEnabled={config?.generate_subtitles ?? false}
-              transcriptionEngine={config?.transcription_engine ?? 'whisper_cpp'}
-              transcriptionModel={config?.transcription_model ?? 'base'}
-            />
-          )}
-        </AnimatePresence>
+        {/* Video Preview and Downloads - wrapped in LayoutGroup for coordinated animations */}
+        <LayoutGroup>
+          <AnimatePresence>
+            {videoInfo && (
+              <VideoPreview
+                video={videoInfo}
+                onDownload={handleDownload}
+                onClose={handleClosePreview}
+                defaultSubtitlesEnabled={config?.generate_subtitles ?? false}
+                transcriptionEngine={config?.transcription_engine ?? 'whisper_cpp'}
+                transcriptionModel={config?.transcription_model ?? 'base'}
+              />
+            )}
+          </AnimatePresence>
 
-        {/* Downloads List */}
-        <DownloadList
-          downloads={downloads}
-          onCancel={cancelDownload}
-          onClear={clearDownload}
-          onClearCompleted={clearCompleted}
-          hasCompletedDownloads={hasCompletedDownloads}
-        />
+          {/* Downloads List */}
+          <DownloadList
+            downloads={downloads}
+            onCancel={cancelDownload}
+            onClear={clearDownload}
+            onClearCompleted={clearCompleted}
+            hasCompletedDownloads={hasCompletedDownloads}
+          />
+        </LayoutGroup>
 
         {/* Empty state - welcoming design */}
         {downloads.length === 0 && !videoInfo && !isLoadingInfo && ytdlpReady && (

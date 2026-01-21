@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import type { VideoInfo, FormatPreset, SubtitleSettings } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
-import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, SUBTITLE_LANGUAGES, TRANSCRIPTION_ENGINES, getSpeedMultiplier, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
+import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, TRANSCRIPTION_ENGINES, getSpeedMultiplier, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
 import { DownloadIcon, XIcon, ChevronDownIcon } from './Icons';
 
 interface VideoPreviewProps {
@@ -28,8 +28,22 @@ export function VideoPreview({
   const [selectedContainer, setSelectedContainer] = useState<VideoFormatId>('original');
   const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormatId>('original');
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(defaultSubtitlesEnabled);
-  const [subtitleLanguage, setSubtitleLanguage] = useState('auto');
-  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
+
+  // Local engine/model state - initialized from props
+  const [selectedEngine, setSelectedEngine] = useState(transcriptionEngine);
+  const [selectedModel, setSelectedModel] = useState(transcriptionModel);
+  const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
+
+  // Get available models for selected engine
+  const currentEngine = TRANSCRIPTION_ENGINES.find(e => e.id === selectedEngine);
+  const availableModels = currentEngine?.models || [];
+
+  // Reset model when engine changes (if current model not available)
+  useEffect(() => {
+    if (!availableModels.find(m => m.id === selectedModel)) {
+      setSelectedModel(availableModels[0]?.id || 'base');
+    }
+  }, [selectedEngine, availableModels, selectedModel]);
 
   const isAudioOnly = selectedQuality === 'audio';
 
@@ -83,34 +97,28 @@ export function VideoPreview({
 
     // Get speed multiplier for the selected engine and model
     // Parakeet requires GPU, so assume GPU for it; others use CPU
-    const useGpu = transcriptionEngine === 'parakeet';
-    const multiplier = getSpeedMultiplier(transcriptionEngine, transcriptionModel, useGpu);
+    const useGpu = selectedEngine === 'parakeet';
+    const multiplier = getSpeedMultiplier(selectedEngine, selectedModel, useGpu);
     const seconds = Math.ceil(video.duration / multiplier) + 10; // +10s overhead
 
     if (seconds < 60) return `~${seconds}s`;
     const minutes = Math.ceil(seconds / 60);
     return `~${minutes} min`;
-  }, [subtitlesEnabled, video.duration, transcriptionEngine, transcriptionModel, isAudioOnly]);
-
-  // Get engine display name
-  const engineDisplayName = useMemo(() => {
-    const engine = TRANSCRIPTION_ENGINES.find(e => e.id === transcriptionEngine);
-    const model = engine?.models.find(m => m.id === transcriptionModel);
-    if (engine && model) {
-      return `${engine.name} (${model.name})`;
-    }
-    return `${transcriptionEngine} (${transcriptionModel})`;
-  }, [transcriptionEngine, transcriptionModel]);
-
-  const selectedLanguageName = SUBTITLE_LANGUAGES.find(l => l.code === subtitleLanguage)?.name || 'Auto-detect';
+  }, [subtitlesEnabled, video.duration, selectedEngine, selectedModel, isAudioOnly]);
 
   return (
     <motion.div
+      layout
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-      className="w-full max-w-4xl max-h-[calc(100vh-200px)] min-h-[280px] glass rounded-2xl overflow-y-auto relative"
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{
+        type: 'spring',
+        stiffness: 400,
+        damping: 30,
+        opacity: { duration: 0.15 },
+      }}
+      className="w-full max-w-4xl glass rounded-2xl relative"
     >
       {/* Close button */}
       <button
@@ -124,7 +132,7 @@ export function VideoPreview({
       {/* Hero layout: side-by-side on larger screens */}
       <div className="flex flex-col md:flex-row">
         {/* Large thumbnail */}
-        <div className="relative md:w-1/2 h-32 md:h-auto md:min-h-[200px] bg-bg-tertiary shrink-0">
+        <div className="relative md:w-1/2 h-32 md:h-auto md:min-h-[180px] bg-bg-tertiary shrink-0">
           {video.thumbnail ? (
             <img
               src={video.thumbnail}
@@ -160,73 +168,67 @@ export function VideoPreview({
         </div>
 
         {/* Content side */}
-        <div className="flex-1 p-3 md:p-4 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="flex-1 p-4 md:p-5 flex flex-col min-w-0">
           {/* Title */}
-          <h2 className="text-sm md:text-base font-semibold text-text-primary leading-snug mb-2 pr-8 line-clamp-2 whitespace-normal">
+          <h2 className="text-base font-semibold text-text-primary leading-snug mb-3 pr-8 line-clamp-2">
             {video.title}
           </h2>
 
-          {/* Quality pills */}
-          <div className="mb-2">
-            <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Quality</p>
-            <div className="flex flex-wrap gap-1.5">
-              {QUALITY_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => setSelectedQuality(preset.id)}
-                  className={cn(
-                    'px-2.5 py-1 text-sm font-medium rounded-lg transition-all',
-                    selectedQuality === preset.id
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/80'
-                  )}
-                >
-                  {preset.shortLabel}
-                </button>
-              ))}
+          {/* Options grid - consistent row height */}
+          <div className="space-y-2.5 mb-4">
+            {/* Quality row */}
+            <div className="flex items-center gap-2.5 h-6">
+              <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Quality</span>
+              <div className="flex gap-0.5 flex-wrap">
+                {QUALITY_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => setSelectedQuality(preset.id)}
+                    className={cn(
+                      'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                      selectedQuality === preset.id
+                        ? 'bg-accent text-white'
+                        : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                    )}
+                  >
+                    {preset.shortLabel}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Format pills */}
-          <div className="mb-2">
-            <p className="text-xs text-text-tertiary mb-1.5 uppercase tracking-wide">Format</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(isAudioOnly ? AUDIO_FORMATS : VIDEO_FORMATS).map((format) => (
-                <button
-                  key={format.id}
-                  onClick={() => isAudioOnly
-                    ? setSelectedAudioFormat(format.id as AudioFormatId)
-                    : setSelectedContainer(format.id as VideoFormatId)
-                  }
-                  className={cn(
-                    'px-2.5 py-1 text-sm font-medium rounded-lg transition-all',
-                    (isAudioOnly ? selectedAudioFormat : selectedContainer) === format.id
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/80'
-                  )}
-                >
-                  {format.label}
-                </button>
-              ))}
+            {/* Format row */}
+            <div className="flex items-center gap-2.5 h-6">
+              <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Format</span>
+              <div className="flex gap-0.5">
+                {(isAudioOnly ? AUDIO_FORMATS : VIDEO_FORMATS).map((format) => (
+                  <button
+                    key={format.id}
+                    onClick={() => isAudioOnly
+                      ? setSelectedAudioFormat(format.id as AudioFormatId)
+                      : setSelectedContainer(format.id as VideoFormatId)
+                    }
+                    className={cn(
+                      'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                      (isAudioOnly ? selectedAudioFormat : selectedContainer) === format.id
+                        ? 'bg-accent text-white'
+                        : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                    )}
+                  >
+                    {format.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Size estimate */}
-          {estimatedSize && (
-            <p className="text-xs text-text-tertiary mb-2">
-              Estimated size: ~{estimatedSize}
-            </p>
-          )}
-
-          {/* Subtitles section - only for video formats */}
-          {!isAudioOnly && (
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs text-text-tertiary uppercase tracking-wide">Subtitles</p>
+            {/* Subtitles row - only for video */}
+            {!isAudioOnly && (
+              <div className="flex items-center gap-2.5 h-6">
+                <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Subtitles</span>
                 <button
                   onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
                   className={cn(
-                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0',
                     subtitlesEnabled ? 'bg-accent' : 'bg-bg-tertiary'
                   )}
                 >
@@ -237,78 +239,99 @@ export function VideoPreview({
                     )}
                   />
                 </button>
-              </div>
 
-              {subtitlesEnabled && (
-                <div className="px-3 py-2 rounded-lg bg-bg-tertiary/50 space-y-2">
-                  {/* Language dropdown */}
-                  <div className="relative">
-                    <button
-                      onClick={() => setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
-                      className="w-full flex items-center justify-between px-2.5 py-1.5 text-sm rounded-md bg-bg-secondary hover:bg-bg-secondary/80 transition-colors"
-                    >
-                      <span className="text-text-secondary">{selectedLanguageName}</span>
-                      <ChevronDownIcon className={cn(
-                        'w-4 h-4 text-text-tertiary transition-transform',
-                        isLanguageDropdownOpen && 'rotate-180'
-                      )} />
-                    </button>
+                {/* Engine dropdown and model pills - shown when enabled */}
+                {subtitlesEnabled && (
+                  <>
+                    <div className="relative">
+                      <button
+                        onClick={() => setIsEngineDropdownOpen(!isEngineDropdownOpen)}
+                        className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-bg-tertiary hover:bg-bg-tertiary/80 transition-colors"
+                      >
+                        <span className="text-text-secondary">{currentEngine?.name || 'Engine'}</span>
+                        <ChevronDownIcon className={cn(
+                          'w-3 h-3 text-text-tertiary transition-transform',
+                          isEngineDropdownOpen && 'rotate-180'
+                        )} />
+                      </button>
 
-                    {isLanguageDropdownOpen && (
-                      <div className="absolute z-50 bottom-full left-0 right-0 mb-1 max-h-40 overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-lg">
-                        {SUBTITLE_LANGUAGES.map((lang) => (
+                      {isEngineDropdownOpen && (
+                        <div className="absolute z-50 bottom-full left-0 mb-1 min-w-[160px] rounded-lg bg-bg-secondary border border-border shadow-lg">
+                          {TRANSCRIPTION_ENGINES.map((engine) => (
+                            <button
+                              key={engine.id}
+                              onClick={() => {
+                                setSelectedEngine(engine.id);
+                                setIsEngineDropdownOpen(false);
+                              }}
+                              className={cn(
+                                'w-full px-3 py-1.5 text-xs text-left hover:bg-bg-tertiary transition-colors',
+                                selectedEngine === engine.id ? 'text-accent' : 'text-text-secondary'
+                              )}
+                            >
+                              <div className="font-medium">{engine.name}</div>
+                              <div className="text-text-tertiary text-[10px]">{engine.description}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {availableModels.length > 1 && (
+                      <div className="flex gap-0.5">
+                        {availableModels.map((model) => (
                           <button
-                            key={lang.code}
-                            onClick={() => {
-                              setSubtitleLanguage(lang.code);
-                              setIsLanguageDropdownOpen(false);
-                            }}
+                            key={model.id}
+                            onClick={() => setSelectedModel(model.id)}
                             className={cn(
-                              'w-full px-3 py-1.5 text-sm text-left hover:bg-bg-tertiary transition-colors',
-                              subtitleLanguage === lang.code ? 'text-accent' : 'text-text-secondary'
+                              'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                              selectedModel === model.id
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
                             )}
                           >
-                            {lang.name}
+                            {model.name}
                           </button>
                         ))}
                       </div>
                     )}
-                  </div>
+                  </>
+                )}
+              </div>
+            )}
 
-                  {/* ETA display */}
-                  {transcriptionEta && (
-                    <p className="text-xs text-text-tertiary">
-                      Est. time: {transcriptionEta} ({engineDisplayName})
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            {/* Size estimate and transcription ETA */}
+            {(estimatedSize || (subtitlesEnabled && transcriptionEta)) && (
+              <p className="text-[11px] text-text-tertiary pl-[66px]">
+                {estimatedSize && <>Estimated size: ~{estimatedSize}</>}
+                {estimatedSize && subtitlesEnabled && transcriptionEta && <> · </>}
+                {subtitlesEnabled && transcriptionEta && <>Transcription: {transcriptionEta}</>}
+              </p>
+            )}
+          </div>
 
-          {/* Download button - full width with glow */}
+          {/* Download button - pushed to bottom */}
           <motion.button
             onClick={() => {
               const format = isAudioOnly ? selectedAudioFormat : selectedContainer;
               const settings: SubtitleSettings | undefined = !isAudioOnly ? {
                 enabled: subtitlesEnabled,
-                engine: transcriptionEngine,
-                model: transcriptionModel,
-                language: subtitleLanguage,
+                engine: selectedEngine,
+                model: selectedModel,
               } : undefined;
               onDownload(`${selectedQuality}:${format}`, settings);
             }}
             disabled={isDownloading}
             className={cn(
-              'w-full mt-auto py-3 px-4 rounded-xl',
-              'btn-gradient text-white font-medium',
+              'w-full mt-auto py-2.5 px-4 rounded-xl',
+              'btn-gradient text-white font-medium text-sm',
               'flex items-center justify-center gap-2',
               'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
             whileTap={{ scale: 0.98 }}
           >
-            <DownloadIcon className="w-5 h-5" />
-            <span>{isDownloading ? 'Starting download...' : 'Download'}</span>
+            <DownloadIcon className="w-4 h-4" />
+            <span>{isDownloading ? 'Starting...' : 'Download'}</span>
           </motion.button>
         </div>
       </div>

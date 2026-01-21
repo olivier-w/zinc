@@ -13,6 +13,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
   const [url, setUrl] = useState('');
   const [shake, setShake] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Derive validation state from url
@@ -83,8 +84,22 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only set false if leaving the container (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragOver(false);
     const text = e.dataTransfer.getData('text/plain');
     if (text && isValidUrl(text.trim())) {
       setUrl(text.trim());
@@ -102,8 +117,11 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           ${!isLoading && isValid === true ? 'glow-success' : ''}
           ${isValid === false ? 'border-error/50' : ''}
           ${!isLoading && isFocused ? 'glow-focus' : ''}
+          ${isDragOver ? 'border-accent ring-2 ring-accent/30' : ''}
         `}
         onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         <input

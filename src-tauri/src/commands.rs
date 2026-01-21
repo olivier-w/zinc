@@ -18,7 +18,6 @@ pub struct SubtitleSettings {
     pub enabled: bool,
     pub engine: String,  // "whisper_cpp", "moonshine", "parakeet"
     pub model: String,
-    pub language: String, // "auto" or language code like "en", "es"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,18 +79,16 @@ pub async fn start_download(
     let config = state.config.lock().await;
 
     // Use per-video subtitle settings if provided, otherwise fall back to global config
-    let (generate_subtitles, transcription_engine, transcription_model, transcription_language) = match &subtitle_settings {
+    let (generate_subtitles, transcription_engine, transcription_model) = match &subtitle_settings {
         Some(settings) => (
             settings.enabled,
             settings.engine.clone(),
             settings.model.clone(),
-            settings.language.clone(),
         ),
         None => (
             config.generate_subtitles,
             config.transcription_engine.clone(),
             config.transcription_model.clone(),
-            "auto".to_string(),
         ),
     };
 
@@ -233,15 +230,14 @@ pub async fn start_download(
                     let video_path = PathBuf::from(&path_str);
                     let transcription_manager = TranscriptionManager::new();
 
-                    log::info!("Starting transcription for: {:?} with engine: {}, model: {}, language: {}",
-                        video_path, transcription_engine, transcription_model, transcription_language);
+                    log::info!("Starting transcription for: {:?} with engine: {}, model: {}",
+                        video_path, transcription_engine, transcription_model);
 
-                    let language = if transcription_language == "auto" { None } else { Some(transcription_language.as_str()) };
                     match transcription_manager.process_video(
                         &video_path,
                         &transcription_engine,
                         &transcription_model,
-                        language,
+                        None, // Language is auto-detected by all engines
                         transcribe_tx
                     ).await {
                         Ok(result) => {

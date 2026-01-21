@@ -286,3 +286,18 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Touch device support - show action overlays on devices without hover capability */
+@media (hover: none), (pointer: coarse) {
+  .touch-action-visible {
+    opacity: 1 !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.4) 100%);
+  }
+}
+
+/* Consistent hover transitions for all interactive elements */
+button,
+a,
+[role="button"] {
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}

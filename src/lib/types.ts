@@ -29,7 +29,6 @@ export interface SubtitleSettings {
   enabled: boolean;
   engine: string;  // "whisper_cpp", "moonshine", "parakeet"
   model: string;
-  language: string; // "auto" or language code like "en", "es"
 }
 
 export interface Download {

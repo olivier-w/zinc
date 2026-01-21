@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { Download } from '@/lib/types';
 import { openFile, openFolder } from '@/lib/tauri';
 import { DownloadCard } from './DownloadCard';
@@ -41,7 +41,7 @@ export function DownloadList({
   }
 
   return (
-    <div className="w-full max-w-6xl">
+    <motion.div layout className="w-full max-w-4xl">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-medium text-text-secondary">
           Downloads ({downloads.length})
@@ -72,6 +72,6 @@ export function DownloadList({
           ))}
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
