@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub transcription_engine: String,
     #[serde(default = "default_transcription_model")]
     pub transcription_model: String,
+    #[serde(default)]
+    pub network_interface: Option<String>, // Stores IPv4 address or None for any interface
 }
 
 fn default_whisper_model() -> String {
@@ -44,6 +46,7 @@ impl Default for AppConfig {
             whisper_model: default_whisper_model(),
             transcription_engine: default_transcription_engine(),
             transcription_model: default_transcription_model(),
+            network_interface: None,
         }
     }
 }

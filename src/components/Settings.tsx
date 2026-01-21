@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress } from '@/lib/types';
-import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, checkParakeetGpuStatus, setupParakeetGpu, onParakeetGpuSetupProgress } from '@/lib/tauri';
+import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress, NetworkInterface } from '@/lib/types';
+import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, checkParakeetGpuStatus, setupParakeetGpu, onParakeetGpuSetupProgress, listNetworkInterfaces } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
 import { QUALITY_PRESETS, FORMAT_OPTIONS } from '@/lib/constants';
 import { FolderIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon, DownloadIcon } from './Icons';
@@ -39,6 +39,10 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
   const [parakeetGpuProgress, setParakeetGpuProgress] = useState<ParakeetGpuSetupProgress | null>(null);
   const [parakeetGpuError, setParakeetGpuError] = useState<string | null>(null);
 
+  // Network interface state
+  const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterface[]>([]);
+  const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
+
   // Fetch yt-dlp status when settings open
   useEffect(() => {
     if (isOpen) {
@@ -47,9 +51,11 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
       checkFfmpeg().then(setHasFfmpeg).catch(() => setHasFfmpeg(false));
       getTranscriptionEngines().then(setEngines).catch(() => {});
       checkParakeetGpuStatus().then(setParakeetGpuStatus).catch(() => {});
+      listNetworkInterfaces().then(setNetworkInterfaces).catch(() => setNetworkInterfaces([]));
       setAvailableUpdate(null);
       setDownloadError(null);
       setParakeetGpuError(null);
+      setIsNetworkDropdownOpen(false);
     }
   }, [isOpen]);
 
@@ -210,6 +216,11 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
       setParakeetGpuProgress(null);
     }
   }, []);
+
+  const handleNetworkInterfaceChange = useCallback(async (ipv4: string | null) => {
+    await onSave({ network_interface: ipv4 });
+    setIsNetworkDropdownOpen(false);
+  }, [onSave]);
 
   // Helper to check if an engine is available
   const isEngineAvailable = (engine: TranscriptionEngine) => {
@@ -414,6 +425,104 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                     Loading...
                   </p>
                 )}
+              </section>
+
+              {/* Network Interface */}
+              <section className="pt-4 border-t border-border">
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  Network Interface
+                </label>
+                <p className="text-xs text-text-tertiary mb-3">
+                  Select which network adapter to use for downloads
+                </p>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setIsNetworkDropdownOpen(!isNetworkDropdownOpen)}
+                    className={cn(
+                      'w-full flex items-center justify-between px-4 py-3',
+                      'bg-bg-tertiary rounded-lg border border-border',
+                      'hover:border-border-hover transition-colors text-left'
+                    )}
+                  >
+                    <span className="text-sm text-text-primary">
+                      {config.network_interface
+                        ? (() => {
+                            const iface = networkInterfaces.find(i => i.ipv4 === config.network_interface);
+                            return iface
+                              ? `${iface.name} (${iface.ipv4})`
+                              : `${config.network_interface} (unavailable)`;
+                          })()
+                        : 'Any interface (default)'}
+                    </span>
+                    <ChevronDownIcon className={cn(
+                      'w-4 h-4 text-text-tertiary transition-transform',
+                      isNetworkDropdownOpen && 'rotate-180'
+                    )} />
+                  </button>
+
+                  {/* Warning if selected interface is unavailable */}
+                  {config.network_interface && !networkInterfaces.find(i => i.ipv4 === config.network_interface) && (
+                    <p className="text-xs text-warning mt-2 px-1">
+                      Previously selected interface is no longer available
+                    </p>
+                  )}
+
+                  {/* Dropdown */}
+                  {isNetworkDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-bg-tertiary border border-border rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
+                      {/* Default option */}
+                      <button
+                        onClick={() => handleNetworkInterfaceChange(null)}
+                        className={cn(
+                          'w-full px-4 py-3 text-left text-sm transition-colors',
+                          'hover:bg-bg-secondary',
+                          config.network_interface === null && 'bg-accent/10 text-accent'
+                        )}
+                      >
+                        Any interface (default)
+                      </button>
+
+                      {/* Available interfaces */}
+                      {networkInterfaces.map((iface) => {
+                        const isSelected = config.network_interface === iface.ipv4;
+                        const isDisabled = !iface.is_up || !iface.ipv4;
+
+                        return (
+                          <button
+                            key={iface.id}
+                            onClick={() => !isDisabled && iface.ipv4 && handleNetworkInterfaceChange(iface.ipv4)}
+                            disabled={isDisabled}
+                            className={cn(
+                              'w-full px-4 py-3 text-left text-sm transition-colors',
+                              'hover:bg-bg-secondary',
+                              isSelected && 'bg-accent/10 text-accent',
+                              isDisabled && 'opacity-50 cursor-not-allowed hover:bg-transparent'
+                            )}
+                          >
+                            <span className="flex items-center justify-between">
+                              <span>
+                                {iface.name}
+                                {iface.ipv4 && (
+                                  <span className="text-text-tertiary ml-2">({iface.ipv4})</span>
+                                )}
+                              </span>
+                              {!iface.is_up && (
+                                <span className="text-xs text-text-tertiary">Disconnected</span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {networkInterfaces.length === 0 && (
+                        <p className="px-4 py-3 text-sm text-text-tertiary">
+                          No network interfaces found
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </section>
 
               {/* Subtitles */}

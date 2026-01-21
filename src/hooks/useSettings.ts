@@ -11,6 +11,7 @@ const defaultConfig: AppConfig = {
   whisper_model: 'base',
   transcription_engine: 'whisper_cpp',
   transcription_model: 'base',
+  network_interface: null,
 };
 
 let cachedConfig: AppConfig | null = null;

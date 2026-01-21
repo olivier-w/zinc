@@ -12,6 +12,19 @@ const TRANSCRIBE_STAGE_MESSAGES: Record<string, string> = {
   finalizing: 'Finalizing...',
 };
 
+// Format error messages into user-friendly text
+function formatErrorMessage(error: string): string {
+  // Network connection errors (WinError 10049, connection failures)
+  if (
+    error.includes('WinError 10049') ||
+    error.includes('Failed to establish a new connection') ||
+    error.includes('The requested address is not valid')
+  ) {
+    return 'Lost internet connection';
+  }
+  return error;
+}
+
 interface DownloadCardProps {
   download: Download;
   onCancel: (id: string) => void;
@@ -213,7 +226,7 @@ export const DownloadCard = memo(function DownloadCard({
 
         {/* Error message */}
         {isError && download.error && (
-          <p className="mt-1 text-xs text-error line-clamp-2" title={download.error}>{download.error}</p>
+          <p className="mt-1 text-xs text-error line-clamp-2" title={download.error}>{formatErrorMessage(download.error)}</p>
         )}
 
         {/* Completed state */}

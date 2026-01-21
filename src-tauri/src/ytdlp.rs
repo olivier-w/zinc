@@ -58,6 +58,7 @@ pub struct DownloadOptions {
     #[serde(default)]
     pub generate_subtitles: bool,
     pub whisper_model: Option<String>,
+    pub source_address: Option<String>, // IPv4 address to bind downloads to
 }
 
 impl Default for DownloadOptions {
@@ -69,6 +70,7 @@ impl Default for DownloadOptions {
             container_format: Some("mp4".to_string()),
             generate_subtitles: false,
             whisper_model: None,
+            source_address: None,
         }
     }
 }
@@ -205,6 +207,11 @@ impl YtDlp {
         // Set container format for merged output (video+audio)
         if let Some(ref container) = options.container_format {
             cmd.args(["--merge-output-format", container]);
+        }
+
+        // Bind to specific network interface
+        if let Some(ref addr) = options.source_address {
+            cmd.args(["--source-address", addr]);
         }
 
         cmd.arg(url)

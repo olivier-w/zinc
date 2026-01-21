@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod network;
 mod sherpa_manager;
 mod transcription;
 mod transcription_manager;
@@ -60,6 +61,8 @@ pub fn run() {
             // Parakeet GPU setup
             commands::check_parakeet_gpu_status,
             commands::setup_parakeet_gpu,
+            // Network interface
+            commands::list_network_interfaces,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

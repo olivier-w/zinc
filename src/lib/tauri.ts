@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, WhisperModel, WhisperInstallProgress, TranscribeProgress, SubtitleSettings, TranscriptionEngine, TranscriptionModel, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress } from './types';
+import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, WhisperModel, WhisperInstallProgress, TranscribeProgress, SubtitleSettings, TranscriptionEngine, TranscriptionModel, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress, NetworkInterface } from './types';
 
 export async function checkYtdlp(): Promise<boolean> {
   return invoke<boolean>('check_ytdlp');
@@ -193,4 +193,10 @@ export function onParakeetGpuSetupProgress(
   return listen<ParakeetGpuSetupProgress>('parakeet-gpu-setup-progress', (event) => {
     callback(event.payload);
   });
+}
+
+// Network interface functions
+
+export async function listNetworkInterfaces(): Promise<NetworkInterface[]> {
+  return invoke<NetworkInterface[]>('list_network_interfaces');
 }

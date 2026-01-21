@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::network::{self, NetworkInterface};
 use crate::transcription::{EngineInfo, InstallProgress as TranscriptionInstallProgress, TranscribeProgress, TranscriptionModel as TranscriptionModelInfo};
 use crate::transcription_manager::TranscriptionManager;
 use crate::whisper::Whisper;
@@ -140,6 +141,7 @@ pub async fn start_download(
         container_format,
         generate_subtitles,
         whisper_model: Some(transcription_model.clone()),
+        source_address: config.network_interface.clone(),
     };
 
     drop(config);
@@ -569,4 +571,11 @@ pub struct ParakeetGpuStatus {
     pub sherpa_onnx_installed: bool,
     pub cuda_dlls_ready: bool,
     pub gpu_available: bool,
+}
+
+// Network interface commands
+
+#[tauri::command]
+pub async fn list_network_interfaces() -> Result<Vec<NetworkInterface>, String> {
+    network::get_network_interfaces()
 }

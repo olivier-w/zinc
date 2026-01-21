@@ -57,6 +57,14 @@ export interface AppConfig {
   whisper_model: string;
   transcription_engine: string;
   transcription_model: string;
+  network_interface: string | null; // IPv4 address or null for any interface
+}
+
+export interface NetworkInterface {
+  id: string;           // Adapter GUID or name
+  name: string;         // Friendly name (e.g., "ProtonVPN", "Ethernet")
+  ipv4: string | null;  // IPv4 address
+  is_up: boolean;       // Connection status
 }
 
 // Transcription engine types
