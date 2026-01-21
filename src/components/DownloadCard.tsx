@@ -5,6 +5,13 @@ import { cn, truncate } from '@/lib/utils';
 import { getSpeedMultiplier } from '@/lib/constants';
 import { CheckIcon, XIcon, AlertCircleIcon, FolderIcon, PlayIcon, TrashIcon, SubtitlesIcon, LoaderIcon } from './Icons';
 
+const TRANSCRIBE_STAGE_MESSAGES: Record<string, string> = {
+  extracting: 'Extracting audio...',
+  transcribing: 'Transcribing...',
+  embedding: 'Embedding subtitles...',
+  finalizing: 'Finalizing...',
+};
+
 interface DownloadCardProps {
   download: Download;
   onCancel: (id: string) => void;
@@ -39,20 +46,10 @@ export const DownloadCard = memo(function DownloadCard({
   const isCancelled = download.status === 'cancelled';
 
   // Parse transcription stage from status like "transcribing:extracting"
-  const getTranscribeStage = () => {
+  const getTranscribeStage = (): string => {
     if (!isTranscribing) return '';
-    const parts = download.status.split(':');
-    if (parts.length > 1) {
-      const stage = parts[1];
-      switch (stage) {
-        case 'extracting': return 'Extracting audio...';
-        case 'transcribing': return 'Transcribing...';
-        case 'embedding': return 'Embedding subtitles...';
-        case 'finalizing': return 'Finalizing...';
-        default: return 'Generating subtitles...';
-      }
-    }
-    return 'Generating subtitles...';
+    const stage = download.status.split(':')[1];
+    return TRANSCRIBE_STAGE_MESSAGES[stage] || 'Generating subtitles...';
   };
 
   // Calculate estimated transcription time

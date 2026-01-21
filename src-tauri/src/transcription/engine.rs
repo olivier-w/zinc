@@ -1,6 +1,112 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use tokio::process::Command;
 use tokio::sync::mpsc;
+
+/// Format seconds as SRT timestamp (HH:MM:SS,mmm)
+pub fn format_srt_time(seconds: f64) -> String {
+    let hours = (seconds / 3600.0) as u32;
+    let minutes = ((seconds % 3600.0) / 60.0) as u32;
+    let secs = (seconds % 60.0) as u32;
+    let millis = ((seconds % 1.0) * 1000.0) as u32;
+    format!("{:02}:{:02}:{:02},{:03}", hours, minutes, secs, millis)
+}
+
+/// Generate SRT content from transcription text by splitting on sentence boundaries
+pub fn generate_srt_from_text(text: &str, duration_secs: f64) -> String {
+    let text = text.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    // Split into sentences
+    let sentences: Vec<&str> = text
+        .split(|c| c == '.' || c == '!' || c == '?')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if sentences.is_empty() {
+        let end_time = format_srt_time(duration_secs);
+        return format!("1\n00:00:00,000 --> {}\n{}\n\n", end_time, text);
+    }
+
+    let time_per_sentence = duration_secs / sentences.len() as f64;
+    let mut srt = String::new();
+
+    for (i, sentence) in sentences.iter().enumerate() {
+        let start_time = i as f64 * time_per_sentence;
+        let end_time = (i + 1) as f64 * time_per_sentence;
+
+        srt.push_str(&format!(
+            "{}\n{} --> {}\n{}.\n\n",
+            i + 1,
+            format_srt_time(start_time),
+            format_srt_time(end_time),
+            sentence
+        ));
+    }
+
+    srt
+}
+
+/// Get audio duration using ffprobe
+pub async fn get_audio_duration(audio_path: &Path) -> Option<f64> {
+    let audio_str = audio_path.to_str()?;
+
+    let mut cmd = Command::new(if cfg!(target_os = "windows") {
+        "ffprobe.exe"
+    } else {
+        "ffprobe"
+    });
+
+    cmd.args([
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        audio_str,
+    ]);
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = cmd.output().await.ok()?;
+    let duration_str = String::from_utf8_lossy(&output.stdout);
+    duration_str.trim().parse().ok()
+}
+
+/// Parse the "text" field from sherpa-onnx JSON output
+pub fn parse_json_text_field(json_str: &str) -> String {
+    if let Some(text_start) = json_str.find("\"text\":") {
+        let after_text = &json_str[text_start + 7..];
+        if let Some(quote_start) = after_text.find('"') {
+            let string_content = &after_text[quote_start + 1..];
+            let mut end_pos = 0;
+            let mut escaped = false;
+            for (i, c) in string_content.char_indices() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if c == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if c == '"' {
+                    end_pos = i;
+                    break;
+                }
+            }
+            if end_pos > 0 {
+                return string_content[..end_pos].to_string();
+            }
+        }
+    }
+    String::new()
+}
 
 /// Progress update during transcription
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,41 +194,23 @@ pub trait TranscriptionEngine: Send + Sync {
         let gpu_available = self.check_gpu_available().await;
 
         let status = if is_available {
-            EngineInfo {
-                id: self.id().to_string(),
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                status: EngineStatus::Available,
-                gpu_required: self.gpu_required(),
-                gpu_available,
-                languages: self.supported_languages().iter().map(|s| s.to_string()).collect(),
-                models: self.available_models().await,
-            }
+            EngineStatus::Available
         } else if self.gpu_required() && !gpu_available {
-            EngineInfo {
-                id: self.id().to_string(),
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                status: EngineStatus::Unavailable { reason: "NVIDIA GPU required".to_string() },
-                gpu_required: self.gpu_required(),
-                gpu_available,
-                languages: self.supported_languages().iter().map(|s| s.to_string()).collect(),
-                models: self.available_models().await,
-            }
+            EngineStatus::Unavailable { reason: "NVIDIA GPU required".to_string() }
         } else {
-            EngineInfo {
-                id: self.id().to_string(),
-                name: self.name().to_string(),
-                description: self.description().to_string(),
-                status: EngineStatus::NotInstalled,
-                gpu_required: self.gpu_required(),
-                gpu_available,
-                languages: self.supported_languages().iter().map(|s| s.to_string()).collect(),
-                models: self.available_models().await,
-            }
+            EngineStatus::NotInstalled
         };
 
-        status
+        EngineInfo {
+            id: self.id().to_string(),
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            status,
+            gpu_required: self.gpu_required(),
+            gpu_available,
+            languages: self.supported_languages().iter().map(|s| s.to_string()).collect(),
+            models: self.available_models().await,
+        }
     }
 
     /// Install the engine (download binary/runtime)

@@ -1,4 +1,7 @@
-use super::{InstallProgress, TranscribeProgress, TranscriptionEngine, TranscriptionModel};
+use super::{
+    format_srt_time, generate_srt_from_text, get_audio_duration,
+    InstallProgress, TranscribeProgress, TranscriptionEngine, TranscriptionModel,
+};
 use crate::sherpa_manager::SherpaManager;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -581,8 +584,8 @@ impl TranscriptionEngine for ParakeetEngine {
             Self::generate_srt_with_timestamps(&tokens, &timestamps)
         } else {
             // Fallback to duration-based splitting
-            let duration = Self::get_audio_duration(audio_path).await.unwrap_or(60.0);
-            Self::generate_srt(&transcript.trim(), duration)
+            let duration = get_audio_duration(audio_path).await.unwrap_or(60.0);
+            generate_srt_from_text(transcript.trim(), duration)
         };
 
         fs::write(&srt_path, &srt_content)
@@ -729,8 +732,8 @@ impl ParakeetEngine {
                 srt.push_str(&format!(
                     "{}\n{} --> {}\n{}\n\n",
                     subtitle_num,
-                    Self::format_srt_time(start_time),
-                    Self::format_srt_time(end_time),
+                    format_srt_time(start_time),
+                    format_srt_time(end_time),
                     current_segment.trim()
                 ));
 
@@ -742,76 +745,5 @@ impl ParakeetEngine {
         }
 
         srt
-    }
-
-    /// Get audio duration using ffprobe
-    async fn get_audio_duration(audio_path: &Path) -> Option<f64> {
-        let mut cmd = Command::new(if cfg!(target_os = "windows") {
-            "ffprobe.exe"
-        } else {
-            "ffprobe"
-        });
-
-        cmd.args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            audio_path.to_str()?,
-        ]);
-
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000);
-
-        let output = cmd.output().await.ok()?;
-        let duration_str = String::from_utf8_lossy(&output.stdout);
-        duration_str.trim().parse().ok()
-    }
-
-    /// Generate SRT content from transcription text
-    fn generate_srt(text: &str, duration_secs: f64) -> String {
-        let text = text.trim();
-        if text.is_empty() {
-            return String::new();
-        }
-
-        // Split into sentences
-        let sentences: Vec<&str> = text
-            .split(|c| c == '.' || c == '!' || c == '?')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if sentences.is_empty() {
-            let end_time = Self::format_srt_time(duration_secs);
-            return format!("1\n00:00:00,000 --> {}\n{}\n\n", end_time, text);
-        }
-
-        let time_per_sentence = duration_secs / sentences.len() as f64;
-        let mut srt = String::new();
-
-        for (i, sentence) in sentences.iter().enumerate() {
-            let start_time = i as f64 * time_per_sentence;
-            let end_time = (i + 1) as f64 * time_per_sentence;
-
-            srt.push_str(&format!(
-                "{}\n{} --> {}\n{}.\n\n",
-                i + 1,
-                Self::format_srt_time(start_time),
-                Self::format_srt_time(end_time),
-                sentence
-            ));
-        }
-
-        srt
-    }
-
-    fn format_srt_time(seconds: f64) -> String {
-        let hours = (seconds / 3600.0) as u32;
-        let minutes = ((seconds % 3600.0) / 60.0) as u32;
-        let secs = (seconds % 60.0) as u32;
-        let millis = ((seconds % 1.0) * 1000.0) as u32;
-        format!("{:02}:{:02}:{:02},{:03}", hours, minutes, secs, millis)
     }
 }
