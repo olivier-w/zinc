@@ -117,55 +117,87 @@ body {
 }
 
 .glow-focus {
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 0 10px 3px rgba(110, 109, 109, 0.3);
 }
 
-/* Animated loading border */
-@keyframes border-rotate {
-  0% {
-    --border-angle: 0deg;
+/* Animated loading border using offset-path for consistent glow size */
+@keyframes glow-travel {
+  to {
+    offset-distance: 100%;
   }
-  100% {
-    --border-angle: 360deg;
-  }
-}
-
-@property --border-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
 }
 
 .glow-loading {
   position: relative;
-  background: rgba(20, 20, 20, 0.8);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
-.glow-loading::before {
+.glow-loading::after {
   content: "";
   position: absolute;
-  inset: -2px;
-  border-radius: 18px;
-  padding: 2px;
-  background: conic-gradient(
-    from var(--border-angle),
-    transparent 40%,
-    #ef4444 50%,
-    #f87171 55%,
-    #ef4444 60%,
-    transparent 70%
+  inset: -1px;
+  border-radius: 17px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 65px at var(--glow-x, 0%) var(--glow-y, 0%),
+    #ef4444 0%,
+    #f87171 30%,
+    transparent 60%
   );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  animation: glow-move 1.25s cubic-bezier(0.55, 0.55, 0.55, 0.035) infinite;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: border-rotate 1.5s linear infinite;
-  pointer-events: none;
+  padding: 1px;
+}
+
+@keyframes glow-move {
+  0% {
+    --glow-x: 0%;
+    --glow-y: 0%;
+  }
+  /* Top edge: 0% to 46% */
+  46% {
+    --glow-x: 100%;
+    --glow-y: 0%;
+  }
+  /* Right edge: 46% to 50% */
+  50% {
+    --glow-x: 100%;
+    --glow-y: 100%;
+  }
+  /* Bottom edge: 50% to 96% */
+  96% {
+    --glow-x: 0%;
+    --glow-y: 100%;
+  }
+  /* Left edge: 96% to 100% */
+  100% {
+    --glow-x: 0%;
+    --glow-y: 0%;
+  }
+}
+
+@property --glow-x {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
+}
+
+@property --glow-y {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
 }
 
 .glow-success {
-  box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
+  box-shadow: 0 0 15px rgba(148, 148, 148, 0.15);
 }
 
 /* Card hover lift effect */
