@@ -143,9 +143,9 @@ export function useDownload() {
     });
   }, []);
 
-  // Derived state
+  // Derived state - reverse so latest downloads appear first
   const downloadList = useMemo(
-    () => Array.from(downloads.values()),
+    () => Array.from(downloads.values()).reverse(),
     [downloads]
   );
 
