@@ -220,11 +220,13 @@ pub trait TranscriptionEngine: Send + Sync {
     async fn download_model(&self, model: &str, progress_callback: Box<dyn Fn(InstallProgress) + Send + 'static>) -> Result<(), String>;
 
     /// Transcribe audio file to SRT
+    /// style: "word" for one word per subtitle (karaoke-style), "sentence" for natural phrase groupings
     async fn transcribe(
         &self,
         audio_path: &Path,
         model: &str,
         language: Option<&str>,
+        style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<PathBuf, String>;
 }

@@ -133,8 +133,13 @@ export const DownloadCard = memo(function DownloadCard({
           </div>
         )}
         {isTranscribing && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50 overflow-hidden">
-            <div className="h-full w-full bg-accent/80 animate-pulse" />
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+            <motion.div
+              className="h-full progress-shimmer"
+              initial={{ width: 0 }}
+              animate={{ width: `${download.transcription_progress ?? 0}%` }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            />
           </div>
         )}
 
@@ -216,11 +221,20 @@ export const DownloadCard = memo(function DownloadCard({
           <div className="flex items-center justify-between text-xs text-text-secondary mt-2">
             <div className="flex items-center gap-2">
               <LoaderIcon className="w-3 h-3 animate-spin text-accent" />
-              <span className="text-accent">{getTranscribeStage()}</span>
+              <span className="text-accent">
+                {download.transcription_message || getTranscribeStage()}
+              </span>
             </div>
-            {transcriptionEta && (
-              <span className="text-text-tertiary tabular-nums">ETA {transcriptionEta}</span>
-            )}
+            <span className="flex items-center gap-2">
+              {download.transcription_progress != null && download.transcription_progress > 0 && (
+                <span className="tabular-nums font-medium text-accent">
+                  {download.transcription_progress.toFixed(0)}%
+                </span>
+              )}
+              {transcriptionEta && download.transcription_progress != null && download.transcription_progress < 10 && (
+                <span className="text-text-tertiary tabular-nums">ETA {transcriptionEta}</span>
+              )}
+            </span>
           </div>
         )}
 

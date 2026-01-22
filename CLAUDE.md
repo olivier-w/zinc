@@ -55,18 +55,15 @@ The transcription system uses a trait-based plugin architecture:
 - **`engine.rs`** - Defines `TranscriptionEngine` trait and common types
 - **`mod.rs`** - `TranscriptionDispatcher` manages available engines
 - **Engine implementations:**
-  - `moonshine.rs` - Moonshine via sherpa-onnx (fast, English-only)
-  - `parakeet.rs` - Parakeet TDT via Python/sherpa-onnx (GPU-optimized, 25 European languages)
-  - `whisper_cpp.rs` - whisper.cpp (multi-language, most accurate)
+  - `whisper_rs_engine.rs` - Native Rust whisper-rs with CUDA support (primary, GPU-accelerated, multi-language)
+  - `moonshine.rs` - Moonshine via sherpa-onnx (fast CPU fallback, English-only)
 
 **Adding a new engine:** Implement `TranscriptionEngine` trait and register in `TranscriptionDispatcher::new()`.
-
-**Parakeet GPU:** Uses Python with sherpa-onnx for CUDA support. The Python script is bundled in `src-tauri/resources/` and deployed at runtime. GPU setup installs pip packages and copies CUDA DLLs to `sherpa_onnx/lib/`.
 
 ### IPC Pattern
 1. Frontend calls `invoke('command_name', { args })` via `/lib/tauri.ts`
 2. Backend handles in `commands.rs` with `#[tauri::command]` functions
-3. Long operations use Tauri events for progress updates (`download-progress`, `ytdlp-install-progress`, `transcribe-progress`, `parakeet-gpu-setup-progress`)
+3. Long operations use Tauri events for progress updates (`download-progress`, `ytdlp-install-progress`, `transcribe-progress`, `transcription-install-progress`)
 4. State shared via `Arc<AppState>` with `Mutex` for async access
 
 ### Key Data Flows
@@ -75,10 +72,6 @@ The transcription system uses a trait-based plugin architecture:
 - **Config:** Stored as JSON in OS config directory, loaded on startup, saved on change
 - **Binaries:** Managed in `{app_data}/com.zinc.app/bin/`, falls back to system PATH
 - **Models:** Stored in `{app_data}/com.zinc.app/models/{engine}/`
-
-### Bundled Resources (`/src-tauri/resources/`)
-Files here are bundled with the app via `tauri.conf.json` resources config and deployed at runtime:
-- `transcribe_parakeet.py` - Python script for CUDA-accelerated Parakeet transcription
 
 ## Styling
 
@@ -89,7 +82,12 @@ Files here are bundled with the app via `tauri.conf.json` resources config and d
 ## External Dependencies
 
 - **yt-dlp:** Downloaded from GitHub releases, used for video downloading
-- **sherpa-onnx:** Downloaded from GitHub releases, used for Moonshine transcription; Python package for Parakeet CUDA
-- **whisper.cpp:** Downloaded from GitHub releases, used for Whisper transcription
+- **sherpa-onnx:** Downloaded from GitHub releases, used for Moonshine transcription
+- **whisper-rs models:** GGML models downloaded from Hugging Face, used for Whisper transcription with native CUDA support
 - **ffmpeg:** Required for subtitle generation (audio extraction and embedding) - must be installed by user and available in PATH
-- **Python 3.10+:** Required for Parakeet GPU acceleration (optional - falls back to CPU)
+
+## Build Requirements (CUDA support)
+
+- CUDA Toolkit 12.x
+- Visual Studio 2022 with C++ Desktop workload
+- LLVM/Clang (set `LIBCLANG_PATH` env var)

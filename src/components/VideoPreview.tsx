@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import type { VideoInfo, FormatPreset, SubtitleSettings } from '@/lib/types';
+import type { VideoInfo, FormatPreset, SubtitleSettings, TranscriptionEngine } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
-import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, TRANSCRIPTION_ENGINES, getSpeedMultiplier, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
+import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
+import { getTranscriptionEngines } from '@/lib/tauri';
 import { DownloadIcon, XIcon, ChevronDownIcon } from './Icons';
 
 interface VideoPreviewProps {
@@ -21,7 +22,7 @@ export function VideoPreview({
   onClose,
   isDownloading = false,
   defaultSubtitlesEnabled = false,
-  transcriptionEngine = 'whisper_cpp',
+  transcriptionEngine = 'whisper_rs',
   transcriptionModel = 'base',
 }: VideoPreviewProps) {
   const [selectedQuality, setSelectedQuality] = useState<FormatPreset>('best');
@@ -29,21 +30,58 @@ export function VideoPreview({
   const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormatId>('original');
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(defaultSubtitlesEnabled);
 
+  // Engines fetched from backend
+  const [engines, setEngines] = useState<TranscriptionEngine[]>([]);
+
   // Local engine/model state - initialized from props
   const [selectedEngine, setSelectedEngine] = useState(transcriptionEngine);
   const [selectedModel, setSelectedModel] = useState(transcriptionModel);
+  const [selectedStyle, setSelectedStyle] = useState<'word' | 'sentence'>('sentence');
   const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
 
-  // Get available models for selected engine
-  const currentEngine = TRANSCRIPTION_ENGINES.find(e => e.id === selectedEngine);
-  const availableModels = currentEngine?.models || [];
-
-  // Reset model when engine changes (if current model not available)
+  // Fetch engines from backend and set initial selection
   useEffect(() => {
-    if (!availableModels.find(m => m.id === selectedModel)) {
-      setSelectedModel(availableModels[0]?.id || 'base');
-    }
-  }, [selectedEngine, availableModels, selectedModel]);
+    getTranscriptionEngines().then((fetchedEngines) => {
+      setEngines(fetchedEngines);
+
+      // Find engines with installed models
+      const enginesWithModels = fetchedEngines.filter(e => e.models.some(m => m.installed));
+      if (enginesWithModels.length === 0) return;
+
+      // Check if current engine has installed models
+      const currentEng = fetchedEngines.find(e => e.id === selectedEngine);
+      const currentHasModels = currentEng?.models.some(m => m.installed);
+
+      if (!currentHasModels) {
+        // Switch to first available engine
+        const firstAvailable = enginesWithModels[0];
+        setSelectedEngine(firstAvailable.id);
+        const firstModel = firstAvailable.models.find(m => m.installed);
+        if (firstModel) setSelectedModel(firstModel.id);
+      } else {
+        // Check if current model is installed
+        const modelInstalled = currentEng?.models.find(m => m.id === selectedModel && m.installed);
+        if (!modelInstalled) {
+          const firstInstalled = currentEng?.models.find(m => m.installed);
+          if (firstInstalled) setSelectedModel(firstInstalled.id);
+        }
+      }
+    }).catch(() => {});
+  }, []); // Only run once on mount
+
+  // Get engines that have at least one installed model
+  const availableEngines = useMemo(() => {
+    return engines.filter(e => e.models.some(m => m.installed));
+  }, [engines]);
+
+  // Get current engine and its installed models
+  const currentEngine = useMemo(() => {
+    return engines.find(e => e.id === selectedEngine);
+  }, [engines, selectedEngine]);
+
+  const installedModels = useMemo(() => {
+    return currentEngine?.models.filter(m => m.installed) || [];
+  }, [currentEngine]);
 
   const isAudioOnly = selectedQuality === 'audio';
 
@@ -95,16 +133,17 @@ export function VideoPreview({
   const transcriptionEta = useMemo(() => {
     if (!subtitlesEnabled || !video.duration || isAudioOnly) return null;
 
-    // Get speed multiplier for the selected engine and model
-    // Parakeet requires GPU, so assume GPU for it; others use CPU
-    const useGpu = selectedEngine === 'parakeet';
-    const multiplier = getSpeedMultiplier(selectedEngine, selectedModel, useGpu);
+    // Get speed multiplier from the actual model data
+    const model = currentEngine?.models.find(m => m.id === selectedModel);
+    // Use GPU speed for whisper_rs, CPU speed for others
+    const useGpu = selectedEngine === 'whisper_rs';
+    const multiplier = model ? (useGpu ? model.speed_gpu : model.speed_cpu) : 5;
     const seconds = Math.ceil(video.duration / multiplier) + 10; // +10s overhead
 
     if (seconds < 60) return `~${seconds}s`;
     const minutes = Math.ceil(seconds / 60);
     return `~${minutes} min`;
-  }, [subtitlesEnabled, video.duration, selectedEngine, selectedModel, isAudioOnly]);
+  }, [subtitlesEnabled, video.duration, selectedEngine, selectedModel, currentEngine, isAudioOnly]);
 
   return (
     <motion.div
@@ -235,13 +274,13 @@ export function VideoPreview({
                   <span
                     className={cn(
                       'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                      subtitlesEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                      subtitlesEnabled ? 'translate-x-4.5' : 'translate-x-1'
                     )}
                   />
                 </button>
 
                 {/* Engine dropdown and model pills - shown when enabled */}
-                {subtitlesEnabled && (
+                {subtitlesEnabled && availableEngines.length > 0 && (
                   <>
                     <div className="relative">
                       <button
@@ -257,7 +296,7 @@ export function VideoPreview({
 
                       {isEngineDropdownOpen && (
                         <div className="absolute z-50 bottom-full left-0 mb-1 min-w-[160px] rounded-lg bg-bg-secondary border border-border shadow-lg">
-                          {TRANSCRIPTION_ENGINES.map((engine) => (
+                          {availableEngines.map((engine) => (
                             <button
                               key={engine.id}
                               onClick={() => {
@@ -277,9 +316,9 @@ export function VideoPreview({
                       )}
                     </div>
 
-                    {availableModels.length > 1 && (
+                    {installedModels.length > 1 && (
                       <div className="flex gap-0.5">
-                        {availableModels.map((model) => (
+                        {installedModels.map((model) => (
                           <button
                             key={model.id}
                             onClick={() => setSelectedModel(model.id)}
@@ -295,7 +334,39 @@ export function VideoPreview({
                         ))}
                       </div>
                     )}
+
+                    {/* Style selector */}
+                    <div className="flex gap-0.5">
+                      <button
+                        onClick={() => setSelectedStyle('sentence')}
+                        className={cn(
+                          'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                          selectedStyle === 'sentence'
+                            ? 'bg-accent text-white'
+                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                        )}
+                        title="Natural phrase groupings like movie subtitles"
+                      >
+                        Sentence
+                      </button>
+                      <button
+                        onClick={() => setSelectedStyle('word')}
+                        className={cn(
+                          'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                          selectedStyle === 'word'
+                            ? 'bg-accent text-white'
+                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                        )}
+                        title="One word per subtitle for karaoke-style timing"
+                      >
+                        Word
+                      </button>
+                    </div>
                   </>
+                )}
+                {/* Show message if no models installed */}
+                {subtitlesEnabled && availableEngines.length === 0 && engines.length > 0 && (
+                  <span className="text-[10px] text-warning">No models installed - check Settings</span>
                 )}
               </div>
             )}
@@ -318,6 +389,7 @@ export function VideoPreview({
                 enabled: subtitlesEnabled,
                 engine: selectedEngine,
                 model: selectedModel,
+                style: selectedStyle,
               } : undefined;
               onDownload(`${selectedQuality}:${format}`, settings);
             }}

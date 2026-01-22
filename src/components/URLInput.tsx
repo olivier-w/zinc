@@ -110,7 +110,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
     <form onSubmit={handleSubmit} className="w-full max-w-3xl">
       <motion.div
         className={`
-          relative flex items-center gap-2 p-2 rounded-2xl
+          relative flex items-center gap-2 p-3 rounded-full
           glass transition-all duration-300
           ${shake ? 'shake' : ''}
           ${isLoading ? 'glow-loading' : ''}
@@ -149,7 +149,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           onClick={handlePaste}
           disabled={disabled || isLoading}
           className={`
-            p-3 rounded-xl text-text-secondary hover:text-text-primary
+            p-3 rounded-full text-text-secondary hover:text-text-primary
             hover:bg-white/10 transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
@@ -162,7 +162,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           type="submit"
           disabled={disabled || isLoading || !isValid}
           className={`
-            p-3.5 rounded-xl btn-gradient text-white
+            p-3.5 rounded-full btn-gradient text-white
             flex items-center justify-center min-w-[52px]
             disabled:opacity-50 disabled:cursor-not-allowed
           `}

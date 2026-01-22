@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, WhisperModel, WhisperInstallProgress, TranscribeProgress, SubtitleSettings, TranscriptionEngine, TranscriptionModel, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress, NetworkInterface } from './types';
+import type { AppConfig, Download, VideoInfo, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, WhisperModel, WhisperInstallProgress, TranscribeProgress, SubtitleSettings, TranscriptionEngine, TranscriptionModel, TranscriptionInstallProgress, NetworkInterface } from './types';
 
 export async function checkYtdlp(): Promise<boolean> {
   return invoke<boolean>('check_ytdlp');
@@ -173,24 +173,6 @@ export function onTranscriptionInstallProgress(
   callback: (progress: TranscriptionInstallProgress) => void
 ): Promise<UnlistenFn> {
   return listen<TranscriptionInstallProgress>('transcription-install-progress', (event) => {
-    callback(event.payload);
-  });
-}
-
-// Parakeet GPU setup functions
-
-export async function checkParakeetGpuStatus(): Promise<ParakeetGpuStatus> {
-  return invoke<ParakeetGpuStatus>('check_parakeet_gpu_status');
-}
-
-export async function setupParakeetGpu(): Promise<void> {
-  return invoke<void>('setup_parakeet_gpu');
-}
-
-export function onParakeetGpuSetupProgress(
-  callback: (progress: ParakeetGpuSetupProgress) => void
-): Promise<UnlistenFn> {
-  return listen<ParakeetGpuSetupProgress>('parakeet-gpu-setup-progress', (event) => {
     callback(event.payload);
   });
 }

@@ -183,6 +183,7 @@ impl TranscriptionEngine for MoonshineEngine {
         audio_path: &Path,
         model: &str,
         _language: Option<&str>,
+        _style: &str,  // Moonshine doesn't support word-level timing, always uses sentence mode
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<PathBuf, String> {
         let _ = progress_tx

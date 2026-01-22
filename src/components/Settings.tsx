@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, ParakeetGpuStatus, ParakeetGpuSetupProgress, NetworkInterface } from '@/lib/types';
-import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, checkParakeetGpuStatus, setupParakeetGpu, onParakeetGpuSetupProgress, listNetworkInterfaces } from '@/lib/tauri';
+import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, NetworkInterface } from '@/lib/types';
+import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, listNetworkInterfaces } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
 import { QUALITY_PRESETS, FORMAT_OPTIONS } from '@/lib/constants';
 import { FolderIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon, DownloadIcon } from './Icons';
@@ -33,12 +33,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
   const [engineProgress, setEngineProgress] = useState<TranscriptionInstallProgress | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  // Parakeet GPU setup state
-  const [parakeetGpuStatus, setParakeetGpuStatus] = useState<ParakeetGpuStatus | null>(null);
-  const [isSettingUpParakeetGpu, setIsSettingUpParakeetGpu] = useState(false);
-  const [parakeetGpuProgress, setParakeetGpuProgress] = useState<ParakeetGpuSetupProgress | null>(null);
-  const [parakeetGpuError, setParakeetGpuError] = useState<string | null>(null);
-
   // Network interface state
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterface[]>([]);
   const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
@@ -50,11 +44,9 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
       getWhisperStatus().then(setWhisperStatus).catch(() => {});
       checkFfmpeg().then(setHasFfmpeg).catch(() => setHasFfmpeg(false));
       getTranscriptionEngines().then(setEngines).catch(() => {});
-      checkParakeetGpuStatus().then(setParakeetGpuStatus).catch(() => {});
       listNetworkInterfaces().then(setNetworkInterfaces).catch(() => setNetworkInterfaces([]));
       setAvailableUpdate(null);
       setDownloadError(null);
-      setParakeetGpuError(null);
       setIsNetworkDropdownOpen(false);
     }
   }, [isOpen]);
@@ -80,21 +72,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
 
     onTranscriptionInstallProgress((progress) => {
       setEngineProgress(progress);
-    }).then((fn) => {
-      unlisten = fn;
-    });
-
-    return () => {
-      unlisten?.();
-    };
-  }, []);
-
-  // Listen for Parakeet GPU setup progress
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-
-    onParakeetGpuSetupProgress((progress) => {
-      setParakeetGpuProgress(progress);
     }).then((fn) => {
       unlisten = fn;
     });
@@ -193,27 +170,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
     } finally {
       setIsDownloadingEngineModel(null);
       setEngineProgress(null);
-    }
-  }, []);
-
-  const handleSetupParakeetGpu = useCallback(async () => {
-    setIsSettingUpParakeetGpu(true);
-    setParakeetGpuProgress(null);
-    setParakeetGpuError(null);
-    try {
-      await setupParakeetGpu();
-      const status = await checkParakeetGpuStatus();
-      setParakeetGpuStatus(status);
-      // Refresh engines to update availability
-      const updatedEngines = await getTranscriptionEngines();
-      setEngines(updatedEngines);
-    } catch (err) {
-      console.error('Failed to set up Parakeet GPU:', err);
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setParakeetGpuError(errorMessage);
-    } finally {
-      setIsSettingUpParakeetGpu(false);
-      setParakeetGpuProgress(null);
     }
   }, []);
 
@@ -713,63 +669,6 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                               {downloadError && !isDownloadingEngineModel && (
                                 <div className="pt-2">
                                   <p className="text-xs text-error">{downloadError}</p>
-                                </div>
-                              )}
-
-                              {/* Parakeet GPU Setup */}
-                              {engine.id === 'parakeet' && parakeetGpuStatus && parakeetGpuStatus.gpu_available && (
-                                <div className="pt-2 border-t border-border/30 mt-2">
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <p className="text-xs font-medium text-text-primary">GPU Acceleration</p>
-                                      <p className="text-[10px] text-text-tertiary mt-0.5">
-                                        {parakeetGpuStatus.cuda_dlls_ready
-                                          ? 'CUDA ready - GPU acceleration enabled'
-                                          : 'Set up CUDA for faster transcription'}
-                                      </p>
-                                    </div>
-                                    {parakeetGpuStatus.cuda_dlls_ready ? (
-                                      <span className="flex items-center gap-1 text-xs text-success">
-                                        <CheckIcon className="w-3 h-3" />
-                                        Ready
-                                      </span>
-                                    ) : (
-                                      <button
-                                        onClick={handleSetupParakeetGpu}
-                                        disabled={isSettingUpParakeetGpu || !parakeetGpuStatus.python_available}
-                                        className={cn(
-                                          'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors',
-                                          'bg-warning/10 text-warning hover:bg-warning/20 disabled:opacity-50'
-                                        )}
-                                      >
-                                        {isSettingUpParakeetGpu ? (
-                                          <>
-                                            <LoaderIcon className="w-3 h-3 animate-spin" />
-                                            Setting up...
-                                          </>
-                                        ) : (
-                                          'Set up GPU'
-                                        )}
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {!parakeetGpuStatus.python_available && (
-                                    <p className="text-[10px] text-error mt-1">
-                                      Python is required for GPU support. Install Python 3.10+ first.
-                                    </p>
-                                  )}
-
-                                  {isSettingUpParakeetGpu && parakeetGpuProgress && (
-                                    <div className="pt-2">
-                                      <p className="text-xs text-text-tertiary mb-1">{parakeetGpuProgress.stage}</p>
-                                      <ProgressBar percentage={parakeetGpuProgress.percentage} />
-                                    </div>
-                                  )}
-
-                                  {parakeetGpuError && !isSettingUpParakeetGpu && (
-                                    <p className="text-xs text-error mt-1">{parakeetGpuError}</p>
-                                  )}
                                 </div>
                               )}
                             </div>

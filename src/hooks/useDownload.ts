@@ -102,6 +102,8 @@ export function useDownload() {
         duration: videoInfo.duration,
         whisper_model: subtitleSettings?.enabled ? subtitleSettings.model : null,
         transcription_engine: subtitleSettings?.enabled ? subtitleSettings.engine : null,
+        transcription_progress: null,
+        transcription_message: null,
       });
       return next;
     });

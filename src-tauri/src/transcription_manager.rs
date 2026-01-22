@@ -104,6 +104,7 @@ impl TranscriptionManager {
         engine_id: &str,
         model_id: &str,
         language: Option<&str>,
+        style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<PathBuf, String> {
         let engine = self
@@ -127,7 +128,7 @@ impl TranscriptionManager {
 
         // Run transcription
         engine
-            .transcribe(file_path, model_id, language, progress_tx)
+            .transcribe(file_path, model_id, language, style, progress_tx)
             .await
     }
 
@@ -209,13 +210,15 @@ impl TranscriptionManager {
         engine_id: &str,
         model_id: &str,
         language: Option<&str>,
+        style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<PathBuf, String> {
         log::info!(
-            "process_video called for: {:?} with engine: {}, model: {}",
+            "process_video called for: {:?} with engine: {}, model: {}, style: {}",
             video_path,
             engine_id,
-            model_id
+            model_id,
+            style
         );
 
         // Check ffmpeg availability
@@ -246,10 +249,11 @@ impl TranscriptionManager {
 
         // Step 2: Transcribe
         log::info!(
-            "Starting transcription with engine: {}, model: {}, language: {:?}",
+            "Starting transcription with engine: {}, model: {}, language: {:?}, style: {}",
             engine_id,
             model_id,
-            language
+            language,
+            style
         );
 
         let generated_srt = self
@@ -258,6 +262,7 @@ impl TranscriptionManager {
                 engine_id,
                 model_id,
                 language,
+                style,
                 progress_tx.clone(),
             )
             .await;

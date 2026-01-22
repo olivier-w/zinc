@@ -58,9 +58,6 @@ pub fn run() {
             commands::install_transcription_engine,
             commands::download_transcription_model,
             commands::get_transcription_speed_multiplier,
-            // Parakeet GPU setup
-            commands::check_parakeet_gpu_status,
-            commands::setup_parakeet_gpu,
             // Network interface
             commands::list_network_interfaces,
         ])

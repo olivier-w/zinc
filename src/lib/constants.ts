@@ -35,36 +35,30 @@ export const FORMAT_OPTIONS = [
 export type VideoFormatId = typeof VIDEO_FORMATS[number]['id'];
 export type AudioFormatId = typeof AUDIO_FORMATS[number]['id'];
 
-// Transcription engine definitions (all engines auto-detect language)
+// Transcription engine definitions - these are fallback defaults
+// The actual engines and models are fetched from the backend
 export const TRANSCRIPTION_ENGINES = [
+  {
+    id: 'whisper_rs',
+    name: 'Whisper (GPU)',
+    description: 'Fast native GPU engine (16-32x realtime)',
+    gpu_required: false,
+    models: [
+      { id: 'tiny', name: 'Tiny', size: '75 MB', speed_gpu: 32, speed_cpu: 8 },
+      { id: 'base', name: 'Base', size: '142 MB', speed_gpu: 16, speed_cpu: 4 },
+      { id: 'small', name: 'Small', size: '466 MB', speed_gpu: 6, speed_cpu: 2 },
+      { id: 'medium', name: 'Medium', size: '1.5 GB', speed_gpu: 2, speed_cpu: 0.5 },
+      { id: 'large-v3', name: 'Large v3', size: '3.1 GB', speed_gpu: 1, speed_cpu: 0.2 },
+    ],
+  },
   {
     id: 'moonshine',
     name: 'Moonshine',
-    description: 'Fast, edge-optimized (5-15x realtime)',
+    description: 'Fast CPU fallback (5-15x realtime)',
     gpu_required: false,
     models: [
       { id: 'tiny', name: 'Tiny', size: '190 MB', speed_gpu: 50, speed_cpu: 15 },
       { id: 'base', name: 'Base', size: '400 MB', speed_gpu: 30, speed_cpu: 10 },
-    ],
-  },
-  {
-    id: 'parakeet',
-    name: 'Parakeet TDT',
-    description: 'Fast, NVIDIA GPU (~12x realtime)',
-    gpu_required: true,
-    models: [
-      { id: '0.6b', name: '0.6B', size: '1.2 GB', speed_gpu: 12, speed_cpu: 2 },
-    ],
-  },
-  {
-    id: 'whisper_cpp',
-    name: 'Whisper.cpp',
-    description: 'Portable, multilingual (2-8x realtime)',
-    gpu_required: false,
-    models: [
-      { id: 'tiny', name: 'Tiny', size: '75 MB', speed_gpu: 12, speed_cpu: 8 },
-      { id: 'base', name: 'Base', size: '142 MB', speed_gpu: 8, speed_cpu: 5 },
-      { id: 'small', name: 'Small', size: '466 MB', speed_gpu: 4, speed_cpu: 2.5 },
     ],
   },
 ] as const;

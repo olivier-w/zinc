@@ -187,7 +187,7 @@ impl YtDlp {
     ) -> Result<PathBuf, String> {
         let output_template = options
             .filename_template
-            .unwrap_or_else(|| "%(title)s.%(ext)s".to_string());
+            .unwrap_or_else(|| "%(title)s_%(id)s.%(ext)s".to_string());
 
         let output_path = options.output_dir.join(&output_template);
 
@@ -198,6 +198,8 @@ impl YtDlp {
             "--no-warnings",
             "--no-playlist",
             "--restrict-filenames",
+            "--print",
+            "after_move:AFTER_MOVE:%(filepath)s",
             "-f",
             &options.format,
             "-o",
@@ -238,6 +240,7 @@ impl YtDlp {
         let download_regex = Regex::new(r"\[download\]\s+Destination:\s+(.+)").ok();
         let already_downloaded_regex = Regex::new(r"\[download\]\s+(.+)\s+has already been downloaded").ok();
         let merger_regex = Regex::new(r#"\[Merger\]\s+Merging formats into "(.+)""#).ok();
+        let after_move_regex = Regex::new(r"^AFTER_MOVE:(.+)$").ok();
 
         let mut final_filename: Option<String> = None;
         let mut cancel_rx = cancel_rx;
@@ -260,6 +263,7 @@ impl YtDlp {
                             if let Some(filename) = try_capture_filename(&download_regex, &line)
                                 .or_else(|| try_capture_filename(&merger_regex, &line))
                                 .or_else(|| try_capture_filename(&already_downloaded_regex, &line))
+                                .or_else(|| try_capture_filename(&after_move_regex, &line))
                             {
                                 final_filename = Some(filename);
                             }

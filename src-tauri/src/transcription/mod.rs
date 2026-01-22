@@ -1,12 +1,10 @@
 mod engine;
-mod whisper_cpp;
 mod moonshine;
-pub mod parakeet;
+mod whisper_rs_engine;
 
 pub use engine::*;
-pub use whisper_cpp::WhisperCppEngine;
 pub use moonshine::MoonshineEngine;
-pub use parakeet::ParakeetEngine;
+pub use whisper_rs_engine::WhisperRsEngine;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -21,9 +19,8 @@ impl TranscriptionDispatcher {
     pub fn new() -> Self {
         Self {
             engines: vec![
-                Arc::new(MoonshineEngine::new()),
-                Arc::new(ParakeetEngine::new()),
-                Arc::new(WhisperCppEngine::new()),
+                Arc::new(WhisperRsEngine::new()),  // Primary GPU engine
+                Arc::new(MoonshineEngine::new()),  // CPU fallback
             ],
         }
     }
@@ -56,12 +53,13 @@ impl TranscriptionDispatcher {
         audio_path: &Path,
         model: &str,
         language: Option<&str>,
+        style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<std::path::PathBuf, String> {
         let engine = self.get_engine(engine_id)
             .ok_or_else(|| format!("Engine '{}' not found", engine_id))?;
 
-        engine.transcribe(audio_path, model, language, progress_tx).await
+        engine.transcribe(audio_path, model, language, style, progress_tx).await
     }
 }
 

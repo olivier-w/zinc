@@ -17,8 +17,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleSettings {
     pub enabled: bool,
-    pub engine: String,  // "whisper_cpp", "moonshine", "parakeet"
+    pub engine: String,  // "whisper_rs", "moonshine"
     pub model: String,
+    pub style: String,   // "word" or "sentence"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +38,8 @@ pub struct Download {
     pub duration: Option<f64>,
     pub whisper_model: Option<String>,
     pub transcription_engine: Option<String>,
+    pub transcription_progress: Option<f64>,
+    pub transcription_message: Option<String>,
 }
 
 pub struct AppState {
@@ -80,16 +83,18 @@ pub async fn start_download(
     let config = state.config.lock().await;
 
     // Use per-video subtitle settings if provided, otherwise fall back to global config
-    let (generate_subtitles, transcription_engine, transcription_model) = match &subtitle_settings {
+    let (generate_subtitles, transcription_engine, transcription_model, transcription_style) = match &subtitle_settings {
         Some(settings) => (
             settings.enabled,
             settings.engine.clone(),
             settings.model.clone(),
+            settings.style.clone(),
         ),
         None => (
             config.generate_subtitles,
             config.transcription_engine.clone(),
             config.transcription_model.clone(),
+            "sentence".to_string(), // Default style when using global config
         ),
     };
 
@@ -108,6 +113,8 @@ pub async fn start_download(
         duration,
         whisper_model: if generate_subtitles { Some(transcription_model.clone()) } else { None },
         transcription_engine: if generate_subtitles { Some(transcription_engine.clone()) } else { None },
+        transcription_progress: None,
+        transcription_message: None,
     };
 
     state.downloads.lock().await.insert(download_id.clone(), download.clone());
@@ -223,6 +230,8 @@ pub async fn start_download(
                                     continue;
                                 }
                                 download.status = format!("transcribing:{}", progress.stage);
+                                download.transcription_progress = Some(progress.progress);
+                                download.transcription_message = Some(progress.message.clone());
                                 let _ = app_for_transcribe.emit("transcribe-progress", &progress);
                                 let _ = app_for_transcribe.emit("download-progress", download.clone());
                             }
@@ -232,14 +241,15 @@ pub async fn start_download(
                     let video_path = PathBuf::from(&path_str);
                     let transcription_manager = TranscriptionManager::new();
 
-                    log::info!("Starting transcription for: {:?} with engine: {}, model: {}",
-                        video_path, transcription_engine, transcription_model);
+                    log::info!("Starting transcription for: {:?} with engine: {}, model: {}, style: {}",
+                        video_path, transcription_engine, transcription_model, transcription_style);
 
                     match transcription_manager.process_video(
                         &video_path,
                         &transcription_engine,
                         &transcription_model,
                         None, // Language is auto-detected by all engines
+                        &transcription_style,
                         transcribe_tx
                     ).await {
                         Ok(result) => {
@@ -545,32 +555,6 @@ pub async fn get_transcription_speed_multiplier(
 ) -> Result<f64, String> {
     let manager = TranscriptionManager::new();
     Ok(manager.get_speed_multiplier(&engine_id, &model_id, use_gpu))
-}
-
-/// Check if Parakeet GPU support is set up
-#[tauri::command]
-pub async fn check_parakeet_gpu_status() -> Result<ParakeetGpuStatus, String> {
-    use crate::transcription::parakeet::ParakeetEngine;
-    ParakeetEngine::check_gpu_setup_status().await
-}
-
-/// Set up Parakeet GPU support (installs Python packages and copies CUDA DLLs)
-#[tauri::command]
-pub async fn setup_parakeet_gpu(app: AppHandle) -> Result<(), String> {
-    use crate::transcription::parakeet::ParakeetEngine;
-
-    ParakeetEngine::setup_gpu(Box::new(move |progress| {
-        let _ = app.emit("parakeet-gpu-setup-progress", &progress);
-    }))
-    .await
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParakeetGpuStatus {
-    pub python_available: bool,
-    pub sherpa_onnx_installed: bool,
-    pub cuda_dlls_ready: bool,
-    pub gpu_available: bool,
 }
 
 // Network interface commands

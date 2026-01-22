@@ -24,7 +24,7 @@ fn default_whisper_model() -> String {
 }
 
 fn default_transcription_engine() -> String {
-    "whisper_cpp".to_string()
+    "whisper_rs".to_string()
 }
 
 fn default_transcription_model() -> String {
@@ -57,7 +57,19 @@ impl AppConfig {
             let config_path = config_dir.join("zinc").join("config.json");
             if config_path.exists() {
                 if let Ok(content) = std::fs::read_to_string(&config_path) {
-                    if let Ok(config) = serde_json::from_str(&content) {
+                    if let Ok(mut config) = serde_json::from_str::<AppConfig>(&content) {
+                        // Migrate deprecated engine settings to whisper_rs
+                        if config.transcription_engine == "parakeet"
+                            || config.transcription_engine == "whisper_cpp"
+                        {
+                            log::info!(
+                                "Migrating transcription engine from '{}' to 'whisper_rs'",
+                                config.transcription_engine
+                            );
+                            config.transcription_engine = "whisper_rs".to_string();
+                            // Save the migrated config
+                            let _ = config.save();
+                        }
                         return config;
                     }
                 }

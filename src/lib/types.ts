@@ -27,8 +27,9 @@ export interface VideoInfo {
 
 export interface SubtitleSettings {
   enabled: boolean;
-  engine: string;  // "whisper_cpp", "moonshine", "parakeet"
+  engine: string;  // "whisper_rs", "moonshine"
   model: string;
+  style: 'word' | 'sentence';  // "word" = one word per subtitle, "sentence" = natural groupings
 }
 
 export interface Download {
@@ -46,6 +47,8 @@ export interface Download {
   duration: number | null;
   whisper_model: string | null;
   transcription_engine: string | null;
+  transcription_progress: number | null;
+  transcription_message: string | null;
 }
 
 export interface AppConfig {
@@ -148,16 +151,3 @@ export interface TranscribeProgress {
   message: string;
 }
 
-export interface ParakeetGpuStatus {
-  python_available: boolean;
-  sherpa_onnx_installed: boolean;
-  cuda_dlls_ready: boolean;
-  gpu_available: boolean;
-}
-
-export interface ParakeetGpuSetupProgress {
-  downloaded: number;
-  total: number | null;
-  percentage: number;
-  stage: string;
-}
