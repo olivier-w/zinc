@@ -117,7 +117,8 @@ body {
 }
 
 .glow-focus {
-  box-shadow: 0 0 10px 2px rgba(175, 87, 87, 0.2);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 10px 2px rgba(99, 99, 99, 0.1);
 }
 
 /* Animated loading border using offset-path for consistent glow size */
@@ -252,6 +253,71 @@ body {
   background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 50%);
 }
 
+/* VideoCard gradient overlay - stronger for text readability */
+.video-card-overlay {
+  background: linear-gradient(
+    to top,
+    rgba(10, 10, 10, 0.98) 0%,
+    rgba(10, 10, 10, 0.9) 30%,
+    rgba(10, 10, 10, 0.6) 55%,
+    rgba(10, 10, 10, 0.3) 70%,
+    transparent 85%
+  );
+}
+
+/* Glass-morphism pills for quality/format selection */
+.pill-glass {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pill-glass:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.pill-glass-selected,
+.pill-glass.pill-glass-selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+.pill-glass-selected:hover,
+.pill-glass.pill-glass-selected:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* Progress ring glow */
+.progress-ring-glow {
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5));
+}
+
+.progress-ring-glow-purple {
+  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.5));
+}
+
+.progress-ring-transcribing {
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.4));
+}
+
+/* Completion burst animation */
+@keyframes completion-burst {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.completion-burst {
+  animation: completion-burst 0.4s ease-out;
+}
+
 /* Shake animation for invalid input */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
@@ -334,7 +400,7 @@ a,
   transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Downloads tray - fixed bottom */
+/* Downloads tray - kept for backwards compatibility but deprecated */
 .downloads-tray {
   position: fixed;
   bottom: 0;
@@ -359,6 +425,12 @@ a,
   display: none;
 }
 
+/* Downloads section - inline variant (new design) */
+.downloads-section {
+  width: 100%;
+  max-width: 576px;
+}
+
 /* Floating settings button */
 .settings-float {
   position: fixed;
@@ -381,13 +453,21 @@ a,
   transform: rotate(45deg);
 }
 
-/* When tray is open, move settings button up */
+/* Legacy: When tray is open, move settings button up (deprecated) */
 .settings-float.tray-open {
   bottom: calc(200px + 1rem);
 }
 
+/* Legacy: When tray is collapsed (deprecated - no longer used with inline design) */
 .settings-float.tray-collapsed {
-  bottom: calc(48px + 1rem);
+  bottom: 1rem;
+}
+
+/* URL input container - smooth flex transitions */
+.url-input-container {
+  transition: flex-grow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              margin-top 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              margin-bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Hero URL input styling */

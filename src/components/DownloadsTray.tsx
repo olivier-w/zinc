@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import type { Download } from '@/lib/types';
 import { openFile, openFolder } from '@/lib/tauri';
 import { DownloadCard } from './DownloadCard';

@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, lazy, Suspense, useMemo } from 'react';
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { URLInput } from './components/URLInput';
-import { VideoPreview } from './components/VideoPreview';
-import { DownloadsTray } from './components/DownloadsTray';
+import { VideoCard } from './components/VideoCard';
+import { DownloadsSection } from './components/DownloadsSection';
 import { ToastContainer } from './components/Toast';
 import { ProgressBar } from './components/ProgressBar';
 import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './components/Icons';
@@ -109,17 +109,74 @@ function App() {
   const handleDownload = useCallback(async (format: string, subtitleSettings?: SubtitleSettings) => {
     if (!videoInfo) return;
 
+    // Only do the sequenced transition if this is the first download
+    // Otherwise, let the new row animate in naturally alongside existing downloads
+    const isFirstDownload = downloads.length === 0;
+
     try {
+      if (isFirstDownload) {
+        // Hide downloads during transition so the new one appears after card exits
+        setShowDownloadsDelayed(false);
+        setDownloadTransitionPending(true);
+      }
+
       await startDownload(videoInfo, format, subtitleSettings);
       success(`Started downloading "${videoInfo.title}"`);
       setVideoInfo(null);
     } catch (err) {
+      // Reset transition state on error
+      if (isFirstDownload) {
+        setShowDownloadsDelayed(true);
+        setDownloadTransitionPending(false);
+      }
       error(err instanceof Error ? err.message : 'Failed to start download');
     }
-  }, [videoInfo, startDownload, success, error]);
+  }, [videoInfo, startDownload, success, error, downloads.length]);
+
+  // Track if card exit animation has completed (for sequenced animation)
+  const [cardExitComplete, setCardExitComplete] = useState(true);
+
+  // Track if downloads section exit animation has completed
+  const [downloadsExitComplete, setDownloadsExitComplete] = useState(true);
+
+  // Track if we're in a download transition (card closing -> download appearing)
+  const [downloadTransitionPending, setDownloadTransitionPending] = useState(false);
+  const [showDownloadsDelayed, setShowDownloadsDelayed] = useState(true);
+
+  // When videoInfo appears, reset the exit complete flag
+  useEffect(() => {
+    if (videoInfo) {
+      setCardExitComplete(false);
+    }
+  }, [videoInfo]);
+
+  // When downloads appear, reset the exit complete flag
+  useEffect(() => {
+    if (downloads.length > 0) {
+      setDownloadsExitComplete(false);
+    }
+  }, [downloads.length]);
 
   const handleClosePreview = useCallback(() => {
     setVideoInfo(null);
+  }, []);
+
+  const handleCardExitComplete = useCallback(() => {
+    // Card has finished fading out, now allow URL input to move
+    setCardExitComplete(true);
+
+    // If we're waiting to show downloads after a download action, now reveal them
+    if (downloadTransitionPending) {
+      // Small delay for visual breathing room
+      setTimeout(() => {
+        setShowDownloadsDelayed(true);
+        setDownloadTransitionPending(false);
+      }, 150);
+    }
+  }, [downloadTransitionPending]);
+
+  const handleDownloadsExitComplete = useCallback(() => {
+    setDownloadsExitComplete(true);
   }, []);
 
   // Derive layout state
@@ -129,14 +186,13 @@ function App() {
     return 'empty';
   }, [videoInfo, isLoadingInfo, downloads.length]);
 
-  // Calculate bottom padding based on downloads tray
-  const bottomPadding = downloads.length > 0 ? 'pb-56' : 'pb-8';
+  // URL input should stay at top until exit animations complete
+  const urlInputAtTop = videoInfo || isLoadingInfo || !cardExitComplete || downloads.length > 0 || !downloadsExitComplete;
 
   return (
     <div className="h-screen bg-bg-primary flex flex-col overflow-hidden">
       {/* Main content - full screen, centered */}
-      <main className={`flex-1 flex flex-col items-center px-6 py-8 overflow-y-auto ${bottomPadding}`}>
-        <LayoutGroup>
+      <main className="flex-1 flex flex-col items-center px-6 py-8 pb-8 overflow-y-auto">
           {/* yt-dlp setup UI */}
           {ytdlpStatus?.status === 'not_installed' && !isInstalling && (
             <motion.div
@@ -209,9 +265,12 @@ function App() {
 
           {/* URL Input - hero when empty, compact otherwise */}
           <div
-            className={`w-full flex flex-col items-center ${
-              layoutState === 'empty' ? 'flex-1 justify-center' : 'pt-4 mb-6'
-            }`}
+            className="w-full flex flex-col items-center justify-center url-input-container"
+            style={{
+              flexGrow: urlInputAtTop ? 0 : 1,
+              marginTop: urlInputAtTop ? 16 : 0,
+              marginBottom: urlInputAtTop ? 24 : 0,
+            }}
           >
             <URLInput
               onSubmit={handleUrlSubmit}
@@ -222,7 +281,7 @@ function App() {
 
             {/* Helper text only in empty state */}
             <AnimatePresence>
-              {layoutState === 'empty' && ytdlpReady && (
+              {!urlInputAtTop && ytdlpReady && (
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -236,16 +295,25 @@ function App() {
             </AnimatePresence>
           </div>
 
-          {/* Video Preview */}
-          <AnimatePresence>
+          {/* Video Card */}
+          <AnimatePresence onExitComplete={handleCardExitComplete}>
             {videoInfo && (
               <motion.div
                 className="w-full flex justify-center"
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20, scale: 0.97 }}
+                initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  scale: 1,
+                  transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] }
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.95,
+                  transition: { duration: 0.3, ease: [0.4, 0, 0.6, 1] }
+                }}
               >
-                <VideoPreview
+                <VideoCard
                   video={videoInfo}
                   onDownload={handleDownload}
                   onClose={handleClosePreview}
@@ -257,48 +325,44 @@ function App() {
             )}
           </AnimatePresence>
 
-          {/* Empty state message when active (downloads exist but no preview) */}
-          {layoutState === 'active' && !videoInfo && !isLoadingInfo && (
+          {/* Downloads Section - inline, replaces fixed tray */}
+          <AnimatePresence onExitComplete={handleDownloadsExitComplete}>
+            {downloads.length > 0 && showDownloadsDelayed && (
+              <DownloadsSection
+                downloads={downloads}
+                onCancel={cancelDownload}
+                onClear={clearDownload}
+                onClearCompleted={clearCompleted}
+                hasCompletedDownloads={hasCompletedDownloads}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Empty state message when truly empty */}
+          {layoutState === 'empty' && !ytdlpReady && !isInstalling && !installError && ytdlpStatus?.status !== 'error' && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.1 }}
+              transition={{ delay: 0.2 }}
               className="text-center py-12"
             >
-              <p className="text-text-secondary text-sm">
-                Ready to download more
-              </p>
-              <p className="text-text-tertiary text-xs mt-1">
-                Paste another URL above
+              <p className="text-text-tertiary text-sm">
+                Waiting for yt-dlp setup...
               </p>
             </motion.div>
           )}
-        </LayoutGroup>
       </main>
 
       {/* Floating settings button */}
       <motion.button
         onClick={() => setIsSettingsOpen(true)}
-        className={`settings-float ${downloads.length > 0 ? 'tray-collapsed' : ''}`}
+        className="settings-float"
         whileHover={{ rotate: 45, scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         aria-label="Open settings"
       >
         <SettingsIcon className="w-5 h-5" />
       </motion.button>
-
-      {/* Downloads tray at bottom */}
-      <AnimatePresence>
-        {downloads.length > 0 && (
-          <DownloadsTray
-            downloads={downloads}
-            onCancel={cancelDownload}
-            onClear={clearDownload}
-            onClearCompleted={clearCompleted}
-            hasCompletedDownloads={hasCompletedDownloads}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Settings panel */}
       <Suspense fallback={null}>

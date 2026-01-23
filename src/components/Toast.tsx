@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import type { Toast as ToastType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { CheckIcon, XIcon, AlertCircleIcon, InfoIcon } from './Icons';

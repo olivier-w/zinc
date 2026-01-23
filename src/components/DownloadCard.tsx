@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import type { Download } from '@/lib/types';
 import { cn, truncate } from '@/lib/utils';
 import { getSpeedMultiplier } from '@/lib/constants';

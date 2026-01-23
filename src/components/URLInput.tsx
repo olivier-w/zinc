@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { isValidUrl } from '@/lib/utils';
-import { DownloadIcon, LoaderIcon } from './Icons';
+import { DownloadIcon, LoaderIcon, AlertCircleIcon } from './Icons';
 
 interface URLInputProps {
   onSubmit: (url: string) => void;
@@ -10,7 +10,7 @@ interface URLInputProps {
   variant?: 'hero' | 'compact';
 }
 
-export function URLInput({ onSubmit, isLoading = false, disabled = false, variant = 'hero' }: URLInputProps) {
+export function URLInput({ onSubmit, isLoading = false, disabled = false, variant: _variant = 'hero' }: URLInputProps) {
   const [url, setUrl] = useState('');
   const [shake, setShake] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -96,15 +96,22 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false, varian
     }
   }, []);
 
-  const isHero = variant === 'hero';
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData('text/plain').trim();
+    if (text && isValidUrl(text)) {
+      e.preventDefault();
+      setUrl(text);
+      // Auto-submit after a brief delay to show the URL
+      setTimeout(() => onSubmit(text), 100);
+    }
+  }, [onSubmit]);
 
   return (
-    <form onSubmit={handleSubmit} className={`w-full transition-all duration-300 ${isHero ? 'max-w-2xl' : 'max-w-xl'}`}>
+    <form onSubmit={handleSubmit} className={`w-full transition-all duration-300 max-w-xl`}>
       <div
         className={`
           relative flex items-center gap-2 rounded-full
-          glass transition-all duration-300 ease-out
-          ${isHero ? 'p-4' : 'p-2'}
+          glass transition-all duration-300 ease-out p-2
           ${shake ? 'shake' : ''}
           ${isLoading ? 'glow-loading' : ''}
           ${!isLoading && isValid === true ? 'glow-success' : ''}
@@ -123,6 +130,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false, varian
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           placeholder="Paste a video URL"
@@ -131,8 +139,7 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false, varian
             flex-1 bg-transparent text-text-primary placeholder-text-tertiary
             outline-none focus:outline-none focus-visible:outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
-            transition-all duration-300
-            ${isHero ? 'px-4 py-3 text-lg' : 'px-3 py-2 text-base'}
+            transition-all duration-300 px-3 py-2 text-base
           `}
           aria-label="Video URL"
           aria-invalid={isValid === false}
@@ -145,29 +152,30 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false, varian
           className={`
             rounded-full btn-gradient text-white
             flex items-center justify-center transition-all duration-300
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${isHero ? 'p-4 min-w-[56px]' : 'p-3 min-w-[44px]'}
+            disabled:opacity-50 disabled:cursor-not-allowed p-3 min-w-[44px]
           `}
           aria-label={isLoading ? 'Loading video info' : 'Get video info'}
         >
           {isLoading ? (
-            <LoaderIcon className={`animate-spin transition-all duration-300 ${isHero ? 'w-6 h-6' : 'w-5 h-5'}`} />
+            <LoaderIcon className={`animate-spin transition-all duration-300 w-5 h-5`} />
           ) : (
-            <DownloadIcon className={`transition-all duration-300 ${isHero ? 'w-6 h-6' : 'w-5 h-5'}`} />
+            <DownloadIcon className={`transition-all duration-300 w-5 h-5`} />
           )}
         </button>
       </div>
 
       {isValid === false && url.trim() !== '' && (
-        <motion.p
+        <motion.div
           id="url-error"
-          className="mt-2 text-sm text-error text-center"
           role="alert"
-          initial={{ opacity: 0, y: -5 }}
+          initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-error/10 border border-error/20"
         >
-          Please enter a valid URL
-        </motion.p>
+          <AlertCircleIcon className="w-4 h-4 text-error shrink-0" />
+          <span className="text-sm text-error/90">Please enter a valid URL</span>
+        </motion.div>
       )}
     </form>
   );

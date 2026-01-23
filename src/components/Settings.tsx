@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, NetworkInterface } from '@/lib/types';
 import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, listNetworkInterfaces } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
