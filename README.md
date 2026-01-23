@@ -1,73 +1,75 @@
-# React + TypeScript + Vite
+# Zinc
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A desktop video downloader with AI-powered subtitle generation.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Download videos from YouTube and other platforms via yt-dlp
+- Quality selection (Best, 4K, 2K, 1080p, 720p, 480p, Audio)
+- Format conversion (Original, MP4, WebM, MKV)
+- AI subtitle generation with multiple engines and models
+- GPU-accelerated transcription via CUDA
 
-## React Compiler
+## Transcription Engines
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Whisper (GPU) - Primary Engine
 
-## Expanding the ESLint configuration
+Native Rust implementation using whisper-rs with CUDA support.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Model | Size | GPU Speed | CPU Speed |
+|-------|------|-----------|-----------|
+| Tiny | 75 MB | 32x | 8x |
+| Base | 142 MB | 16x | 4x |
+| Small | 466 MB | 6x | 2x |
+| Medium | 1.5 GB | 2x | 0.5x |
+| Large v3 | 3.1 GB | 1x | 0.2x |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Supports 99+ languages with auto-detection
+- Models downloaded from Hugging Face (GGML format)
+- Transcription styles: sentence (natural phrases) or word (karaoke)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Moonshine - CPU Fallback
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Fast ONNX-based engine via sherpa-onnx.
+
+| Model | Size | GPU Speed | CPU Speed |
+|-------|------|-----------|-----------|
+| Tiny | 35 MB | 50x | 15x |
+| Base | 70 MB | 30x | 10x |
+
+- English only
+- Optimized for CPU inference
+
+## Requirements
+
+- **ffmpeg** - Required for audio extraction and subtitle embedding (must be in PATH)
+- **CUDA Toolkit 12.x** - Optional, for GPU-accelerated transcription
+
+## Development
+
+```bash
+# Install dependencies
+bun install
+
+# Development - frontend only (hot reload on port 5173)
+bun run dev
+
+# Development - full Tauri app with hot reload
+bun run tauri:dev
+
+# Build for production
+bun run tauri:build
+
+# Lint
+bun run lint
+
+# Type check
+bunx tsc -b
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Tech Stack
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Frontend:** React 19, TypeScript, Tailwind CSS, Framer Motion
+- **Backend:** Tauri 2, Rust
+- **Transcription:** whisper-rs (CUDA), sherpa-onnx
+- **Video:** yt-dlp, ffmpeg

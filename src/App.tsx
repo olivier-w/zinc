@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense, useMemo } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { URLInput } from './components/URLInput';
 import { VideoPreview } from './components/VideoPreview';
-import { DownloadList } from './components/DownloadList';
+import { DownloadsTray } from './components/DownloadsTray';
 import { ToastContainer } from './components/Toast';
 import { ProgressBar } from './components/ProgressBar';
 import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './components/Icons';
@@ -17,6 +17,8 @@ const Settings = lazy(() =>
   import('./components/Settings').then(m => ({ default: m.Settings }))
 );
 
+type LayoutState = 'empty' | 'preview' | 'active';
+
 function App() {
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
@@ -28,7 +30,6 @@ function App() {
 
   const {
     downloads,
-    hasActiveDownloads,
     hasCompletedDownloads,
     startDownload,
     cancelDownload,
@@ -121,159 +122,183 @@ function App() {
     setVideoInfo(null);
   }, []);
 
-  const activeCount = downloads.filter(d => d.status === 'downloading' || d.status === 'pending').length;
+  // Derive layout state
+  const layoutState: LayoutState = useMemo(() => {
+    if (videoInfo || isLoadingInfo) return 'preview';
+    if (downloads.length > 0) return 'active';
+    return 'empty';
+  }, [videoInfo, isLoadingInfo, downloads.length]);
+
+  // Calculate bottom padding based on downloads tray
+  const bottomPadding = downloads.length > 0 ? 'pb-56' : 'pb-8';
 
   return (
     <div className="h-screen bg-bg-primary flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-accent" />
-            <h1 className="text-xl font-semibold text-text-primary tracking-tight">Zinc</h1>
-          </div>
-          {hasActiveDownloads && (
-            <span className="badge-accent px-2.5 py-1 text-xs font-medium rounded-full tabular-nums">
-              {activeCount} active
-            </span>
-          )}
-        </div>
-        <button
-          onClick={() => setIsSettingsOpen(true)}
-          className="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-secondary transition-colors"
-          aria-label="Open settings"
-        >
-          <SettingsIcon className="w-5 h-5" />
-        </button>
-      </header>
-
-      {/* Main content - wider max-width */}
-      <main className="flex-1 flex flex-col items-center px-6 py-8 gap-8 overflow-y-auto">
-        {/* yt-dlp setup UI */}
-        {ytdlpStatus?.status === 'not_installed' && !isInstalling && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl"
-          >
-            <div className="flex items-center gap-3 text-text-secondary">
-              <DownloadIcon className="w-6 h-6" />
-              <p className="text-sm">yt-dlp is required to download videos</p>
-            </div>
-            <button
-              onClick={handleInstallYtdlp}
-              className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
-            >
-              Download yt-dlp
-            </button>
-          </motion.div>
-        )}
-
-        {/* Installing yt-dlp */}
-        {isInstalling && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl"
-          >
-            <div className="flex items-center gap-3 text-text-secondary">
-              <LoaderIcon className="w-5 h-5 animate-spin text-accent" />
-              <p className="text-sm">Downloading yt-dlp...</p>
-            </div>
-            {installProgress && (
-              <div className="w-full max-w-xs">
-                <ProgressBar percentage={installProgress.percentage} className="h-2" />
-                <p className="text-xs text-text-tertiary text-center mt-2">
-                  {Math.round(installProgress.percentage)}%
-                </p>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {/* Install error */}
-        {installError && !isInstalling && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-3xl flex flex-col items-center gap-4 px-6 py-8 bg-error/10 border border-error/20 rounded-2xl"
-          >
-            <div className="flex items-center gap-3 text-error">
-              <AlertCircleIcon className="w-5 h-5 shrink-0" />
-              <p className="text-sm">{installError}</p>
-            </div>
-            <button
-              onClick={handleInstallYtdlp}
-              className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
-            >
-              Retry
-            </button>
-          </motion.div>
-        )}
-
-        {/* yt-dlp error status */}
-        {ytdlpStatus?.status === 'error' && !installError && (
-          <div className="w-full max-w-3xl flex items-center gap-3 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg text-warning">
-            <AlertCircleIcon className="w-5 h-5 shrink-0" />
-            <p className="text-sm">{ytdlpStatus.message}</p>
-          </div>
-        )}
-
-        {/* URL Input */}
-        <URLInput
-          onSubmit={handleUrlSubmit}
-          isLoading={isLoadingInfo}
-          disabled={!ytdlpReady || isInstalling}
-        />
-
-        {/* Video Preview and Downloads - wrapped in LayoutGroup for coordinated animations */}
+      {/* Main content - full screen, centered */}
+      <main className={`flex-1 flex flex-col items-center px-6 py-8 overflow-y-auto ${bottomPadding}`}>
         <LayoutGroup>
+          {/* yt-dlp setup UI */}
+          {ytdlpStatus?.status === 'not_installed' && !isInstalling && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl mb-8"
+            >
+              <div className="flex items-center gap-3 text-text-secondary">
+                <DownloadIcon className="w-6 h-6" />
+                <p className="text-sm">yt-dlp is required to download videos</p>
+              </div>
+              <button
+                onClick={handleInstallYtdlp}
+                className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
+              >
+                Download yt-dlp
+              </button>
+            </motion.div>
+          )}
+
+          {/* Installing yt-dlp */}
+          {isInstalling && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-8 glass rounded-2xl mb-8"
+            >
+              <div className="flex items-center gap-3 text-text-secondary">
+                <LoaderIcon className="w-5 h-5 animate-spin text-accent" />
+                <p className="text-sm">Downloading yt-dlp...</p>
+              </div>
+              {installProgress && (
+                <div className="w-full max-w-xs">
+                  <ProgressBar percentage={installProgress.percentage} className="h-2" />
+                  <p className="text-xs text-text-tertiary text-center mt-2">
+                    {Math.round(installProgress.percentage)}%
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Install error */}
+          {installError && !isInstalling && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full max-w-2xl flex flex-col items-center gap-4 px-6 py-8 bg-error/10 border border-error/20 rounded-2xl mb-8"
+            >
+              <div className="flex items-center gap-3 text-error">
+                <AlertCircleIcon className="w-5 h-5 shrink-0" />
+                <p className="text-sm">{installError}</p>
+              </div>
+              <button
+                onClick={handleInstallYtdlp}
+                className="px-6 py-2.5 btn-gradient text-white font-medium rounded-lg"
+              >
+                Retry
+              </button>
+            </motion.div>
+          )}
+
+          {/* yt-dlp error status */}
+          {ytdlpStatus?.status === 'error' && !installError && (
+            <div className="w-full max-w-2xl flex items-center gap-3 px-4 py-3 bg-warning/10 border border-warning/20 rounded-lg text-warning mb-8">
+              <AlertCircleIcon className="w-5 h-5 shrink-0" />
+              <p className="text-sm">{ytdlpStatus.message}</p>
+            </div>
+          )}
+
+          {/* URL Input - hero when empty, compact otherwise */}
+          <div
+            className={`w-full flex flex-col items-center ${
+              layoutState === 'empty' ? 'flex-1 justify-center' : 'pt-4 mb-6'
+            }`}
+          >
+            <URLInput
+              onSubmit={handleUrlSubmit}
+              isLoading={isLoadingInfo}
+              disabled={!ytdlpReady || isInstalling}
+              variant={layoutState === 'empty' ? 'hero' : 'compact'}
+            />
+
+            {/* Helper text only in empty state */}
+            <AnimatePresence>
+              {layoutState === 'empty' && ytdlpReady && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="mt-4 text-text-tertiary text-sm helper-text"
+                >
+                  Press <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border text-text-secondary text-xs">Ctrl+V</kbd> to paste from clipboard
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Video Preview */}
           <AnimatePresence>
             {videoInfo && (
-              <VideoPreview
-                video={videoInfo}
-                onDownload={handleDownload}
-                onClose={handleClosePreview}
-                defaultSubtitlesEnabled={config?.generate_subtitles ?? false}
-                transcriptionEngine={config?.transcription_engine ?? 'whisper_cpp'}
-                transcriptionModel={config?.transcription_model ?? 'base'}
-              />
+              <motion.div
+                className="w-full flex justify-center"
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20, scale: 0.97 }}
+              >
+                <VideoPreview
+                  video={videoInfo}
+                  onDownload={handleDownload}
+                  onClose={handleClosePreview}
+                  defaultSubtitlesEnabled={config?.generate_subtitles ?? false}
+                  transcriptionEngine={config?.transcription_engine ?? 'whisper_cpp'}
+                  transcriptionModel={config?.transcription_model ?? 'base'}
+                />
+              </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Downloads List */}
-          <DownloadList
+          {/* Empty state message when active (downloads exist but no preview) */}
+          {layoutState === 'active' && !videoInfo && !isLoadingInfo && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.1 }}
+              className="text-center py-12"
+            >
+              <p className="text-text-secondary text-sm">
+                Ready to download more
+              </p>
+              <p className="text-text-tertiary text-xs mt-1">
+                Paste another URL above
+              </p>
+            </motion.div>
+          )}
+        </LayoutGroup>
+      </main>
+
+      {/* Floating settings button */}
+      <motion.button
+        onClick={() => setIsSettingsOpen(true)}
+        className={`settings-float ${downloads.length > 0 ? 'tray-collapsed' : ''}`}
+        whileHover={{ rotate: 45, scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        aria-label="Open settings"
+      >
+        <SettingsIcon className="w-5 h-5" />
+      </motion.button>
+
+      {/* Downloads tray at bottom */}
+      <AnimatePresence>
+        {downloads.length > 0 && (
+          <DownloadsTray
             downloads={downloads}
             onCancel={cancelDownload}
             onClear={clearDownload}
             onClearCompleted={clearCompleted}
             hasCompletedDownloads={hasCompletedDownloads}
           />
-        </LayoutGroup>
-
-        {/* Empty state - welcoming design */}
-        {downloads.length === 0 && !videoInfo && !isLoadingInfo && ytdlpReady && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-center py-16"
-          >
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-bg-secondary border border-border mb-6">
-              <DownloadIcon className="w-7 h-7 text-accent" />
-            </div>
-            <h3 className="text-lg font-medium text-text-primary mb-2">
-              Ready to download
-            </h3>
-            <p className="text-text-secondary text-sm mb-4">
-              Paste a video URL to get started
-            </p>
-            <p className="text-text-tertiary text-xs">
-              Tip: Press <kbd className="px-1.5 py-0.5 rounded bg-bg-tertiary border border-border text-text-secondary">Ctrl+V</kbd> to paste from clipboard
-            </p>
-          </motion.div>
         )}
-      </main>
+      </AnimatePresence>
 
       {/* Settings panel */}
       <Suspense fallback={null}>

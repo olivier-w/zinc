@@ -333,3 +333,79 @@ a,
 [role="button"] {
   transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
+
+/* Downloads tray - fixed bottom */
+.downloads-tray {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(20, 20, 20, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 40;
+}
+
+.downloads-tray-content {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.downloads-tray-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* Floating settings button */
+.settings-float {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 30;
+  padding: 0.75rem;
+  border-radius: 50%;
+  background: rgba(44, 44, 44, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.settings-float:hover {
+  color: var(--text-primary);
+  background: rgba(60, 60, 60, 0.9);
+  transform: rotate(45deg);
+}
+
+/* When tray is open, move settings button up */
+.settings-float.tray-open {
+  bottom: calc(200px + 1rem);
+}
+
+.settings-float.tray-collapsed {
+  bottom: calc(48px + 1rem);
+}
+
+/* Hero URL input styling */
+.url-input-hero {
+  transform: scale(1.05);
+}
+
+.url-input-hero input {
+  font-size: 1.125rem;
+  padding: 1.25rem 1.5rem;
+}
+
+/* Helper text fade */
+.helper-text {
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.helper-text:hover {
+  opacity: 0.8;
+}

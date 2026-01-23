@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { VideoInfo, FormatPreset, SubtitleSettings, TranscriptionEngine } from '@/lib/types';
 import { formatDuration, formatViewCount, formatBytes, cn } from '@/lib/utils';
 import { QUALITY_PRESETS, VIDEO_FORMATS, AUDIO_FORMATS, type VideoFormatId, type AudioFormatId } from '@/lib/constants';
 import { getTranscriptionEngines } from '@/lib/tauri';
-import { DownloadIcon, XIcon, ChevronDownIcon } from './Icons';
+import { DownloadIcon, XIcon, ChevronRightIcon } from './Icons';
 
 interface VideoPreviewProps {
   video: VideoInfo;
@@ -29,6 +29,7 @@ export function VideoPreview({
   const [selectedContainer, setSelectedContainer] = useState<VideoFormatId>('original');
   const [selectedAudioFormat, setSelectedAudioFormat] = useState<AudioFormatId>('original');
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(defaultSubtitlesEnabled);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Engines fetched from backend
   const [engines, setEngines] = useState<TranscriptionEngine[]>([]);
@@ -37,7 +38,6 @@ export function VideoPreview({
   const [selectedEngine, setSelectedEngine] = useState(transcriptionEngine);
   const [selectedModel, setSelectedModel] = useState(transcriptionModel);
   const [selectedStyle, setSelectedStyle] = useState<'word' | 'sentence'>('sentence');
-  const [isEngineDropdownOpen, setIsEngineDropdownOpen] = useState(false);
 
   // Fetch engines from backend and set initial selection
   useEffect(() => {
@@ -159,10 +159,10 @@ export function VideoPreview({
       }}
       className="w-full max-w-4xl glass rounded-2xl relative"
     >
-      {/* Close button */}
+      {/* Close button - top left for less cramped layout */}
       <button
         onClick={onClose}
-        className="absolute top-3 right-3 z-10 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+        className="absolute top-3 left-3 z-10 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
         aria-label="Close preview"
       >
         <XIcon className="w-5 h-5" />
@@ -209,176 +209,292 @@ export function VideoPreview({
         {/* Content side */}
         <div className="flex-1 p-4 md:p-5 flex flex-col min-w-0">
           {/* Title */}
-          <h2 className="text-base font-semibold text-text-primary leading-snug mb-3 pr-8 line-clamp-2">
+          <h2 className="text-base font-semibold text-text-primary leading-snug mb-1 pr-8 line-clamp-2">
             {video.title}
           </h2>
 
-          {/* Options grid - consistent row height */}
-          <div className="space-y-2.5 mb-4">
-            {/* Quality row */}
-            <div className="flex items-center gap-2.5 h-6">
-              <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Quality</span>
-              <div className="flex gap-0.5 flex-wrap">
-                {QUALITY_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    onClick={() => setSelectedQuality(preset.id)}
-                    className={cn(
-                      'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
-                      selectedQuality === preset.id
-                        ? 'bg-accent text-white'
-                        : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
-                    )}
-                  >
-                    {preset.shortLabel}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Metadata line: channel · duration */}
+          <p className="text-[12px] text-text-secondary mb-3">
+            {video.channel}
+            {video.channel && video.duration !== null && ' · '}
+            {video.duration !== null && formatDuration(video.duration)}
+          </p>
 
-            {/* Format row */}
-            <div className="flex items-center gap-2.5 h-6">
-              <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Format</span>
-              <div className="flex gap-0.5">
-                {(isAudioOnly ? AUDIO_FORMATS : VIDEO_FORMATS).map((format) => (
-                  <button
-                    key={format.id}
-                    onClick={() => isAudioOnly
-                      ? setSelectedAudioFormat(format.id as AudioFormatId)
-                      : setSelectedContainer(format.id as VideoFormatId)
-                    }
-                    className={cn(
-                      'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
-                      (isAudioOnly ? selectedAudioFormat : selectedContainer) === format.id
-                        ? 'bg-accent text-white'
-                        : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
-                    )}
-                  >
-                    {format.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Advanced section */}
+          <div className="mb-4">
+            {/* Advanced toggle button */}
+            <button
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              className="flex items-center gap-1.5 text-[12px] text-text-secondary hover:text-text-primary transition-colors mb-2"
+              aria-expanded={advancedOpen}
+              aria-controls="advanced-options-panel"
+            >
+              <ChevronRightIcon
+                className={cn(
+                  'w-4 h-4 transition-transform duration-200',
+                  advancedOpen && 'rotate-90'
+                )}
+              />
+              <span>Advanced</span>
+            </button>
 
-            {/* Subtitles row - only for video */}
-            {!isAudioOnly && (
-              <div className="flex items-center gap-2.5 h-6">
-                <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Subtitles</span>
-                <button
-                  onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
-                  className={cn(
-                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0',
-                    subtitlesEnabled ? 'bg-accent' : 'bg-bg-tertiary'
-                  )}
+            {/* Collapsible advanced options */}
+            <AnimatePresence>
+              {advancedOpen && (
+                <motion.div
+                  id="advanced-options-panel"
+                  role="region"
+                  aria-label="Advanced options"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  className="overflow-hidden"
                 >
-                  <span
-                    className={cn(
-                      'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                      subtitlesEnabled ? 'translate-x-4.5' : 'translate-x-1'
-                    )}
-                  />
-                </button>
-
-                {/* Engine dropdown and model pills - shown when enabled */}
-                {subtitlesEnabled && availableEngines.length > 0 && (
-                  <>
-                    <div className="relative">
-                      <button
-                        onClick={() => setIsEngineDropdownOpen(!isEngineDropdownOpen)}
-                        className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded bg-bg-tertiary hover:bg-bg-tertiary/80 transition-colors"
-                      >
-                        <span className="text-text-secondary">{currentEngine?.name || 'Engine'}</span>
-                        <ChevronDownIcon className={cn(
-                          'w-3 h-3 text-text-tertiary transition-transform',
-                          isEngineDropdownOpen && 'rotate-180'
-                        )} />
-                      </button>
-
-                      {isEngineDropdownOpen && (
-                        <div className="absolute z-50 bottom-full left-0 mb-1 min-w-[160px] rounded-lg bg-bg-secondary border border-border shadow-lg">
-                          {availableEngines.map((engine) => (
-                            <button
-                              key={engine.id}
-                              onClick={() => {
-                                setSelectedEngine(engine.id);
-                                setIsEngineDropdownOpen(false);
-                              }}
-                              className={cn(
-                                'w-full px-3 py-1.5 text-xs text-left hover:bg-bg-tertiary transition-colors',
-                                selectedEngine === engine.id ? 'text-accent' : 'text-text-secondary'
-                              )}
-                            >
-                              <div className="font-medium">{engine.name}</div>
-                              <div className="text-text-tertiary text-[10px]">{engine.description}</div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {installedModels.length > 1 && (
-                      <div className="flex gap-0.5">
-                        {installedModels.map((model) => (
+                  <div className="space-y-2.5 pl-5">
+                    {/* Quality row */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0 }}
+                      className="flex items-center gap-2.5 h-6"
+                    >
+                      <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Quality</span>
+                      <div className="flex gap-0.5 flex-wrap">
+                        {QUALITY_PRESETS.map((preset) => (
                           <button
-                            key={model.id}
-                            onClick={() => setSelectedModel(model.id)}
+                            key={preset.id}
+                            onClick={() => setSelectedQuality(preset.id)}
                             className={cn(
                               'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
-                              selectedModel === model.id
+                              selectedQuality === preset.id
                                 ? 'bg-accent text-white'
                                 : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
                             )}
                           >
-                            {model.name}
+                            {preset.shortLabel}
                           </button>
                         ))}
                       </div>
+                    </motion.div>
+
+                    {/* Format row */}
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.05 }}
+                      className="flex items-center gap-2.5 h-6"
+                    >
+                      <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Format</span>
+                      <div className="flex gap-0.5">
+                        {(isAudioOnly ? AUDIO_FORMATS : VIDEO_FORMATS).map((format) => (
+                          <button
+                            key={format.id}
+                            onClick={() => isAudioOnly
+                              ? setSelectedAudioFormat(format.id as AudioFormatId)
+                              : setSelectedContainer(format.id as VideoFormatId)
+                            }
+                            className={cn(
+                              'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                              (isAudioOnly ? selectedAudioFormat : selectedContainer) === format.id
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                            )}
+                          >
+                            {format.label}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+
+                    {/* Subtitles section - only for video */}
+                    {!isAudioOnly && (
+                      <div className="space-y-2">
+                        {/* Subtitles header row */}
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.1 }}
+                          className="flex items-center gap-2.5 h-6"
+                        >
+                          <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Subtitles</span>
+                          <div className="flex items-center gap-2 flex-1">
+                            <button
+                              onClick={() => setSubtitlesEnabled(!subtitlesEnabled)}
+                              aria-expanded={subtitlesEnabled}
+                              aria-controls="subtitle-options-panel"
+                              className={cn(
+                                'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0',
+                                subtitlesEnabled ? 'bg-accent' : 'bg-bg-tertiary'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                                  subtitlesEnabled ? 'translate-x-4.5' : 'translate-x-1'
+                                )}
+                              />
+                            </button>
+                            {subtitlesEnabled && transcriptionEta && (
+                              <span className="text-[10px] text-text-tertiary">{transcriptionEta}</span>
+                            )}
+                          </div>
+                        </motion.div>
+
+                        {/* Collapsible subtitle options panel */}
+                        <AnimatePresence>
+                          {subtitlesEnabled && (
+                            <motion.div
+                              id="subtitle-options-panel"
+                              role="region"
+                              aria-label="Subtitle options"
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-2.5 pt-1">
+                                {/* No models installed warning */}
+                                {availableEngines.length === 0 && engines.length > 0 && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.05 }}
+                                    className="flex items-center gap-2.5 h-6"
+                                  >
+                                    <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0"></span>
+                                    <span className="text-[11px] text-warning">No models installed — check Settings</span>
+                                  </motion.div>
+                                )}
+
+                                {availableEngines.length > 0 && (
+                                  <>
+                                    {/* Engine selector - segmented control */}
+                                    {availableEngines.length > 1 && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: -4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.05 }}
+                                        className="flex items-center gap-2.5 h-6"
+                                      >
+                                        <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Engine</span>
+                                        <div className="flex rounded-md overflow-hidden border border-border">
+                                          {availableEngines.map((engine) => (
+                                            <button
+                                              key={engine.id}
+                                              onClick={() => {
+                                                setSelectedEngine(engine.id);
+                                                // Auto-select first installed model for the new engine
+                                                const firstModel = engine.models.find(m => m.installed);
+                                                if (firstModel) setSelectedModel(firstModel.id);
+                                              }}
+                                              className={cn(
+                                                'px-2.5 py-0.5 text-[11px] font-medium transition-colors',
+                                                'border-r border-border last:border-r-0',
+                                                selectedEngine === engine.id
+                                                  ? 'bg-accent text-white'
+                                                  : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/80'
+                                              )}
+                                              title={engine.description}
+                                            >
+                                              {engine.name}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+
+                                    {/* Model selector - pill buttons */}
+                                    {installedModels.length > 1 && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: -4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: 0.1 }}
+                                        className="flex items-center gap-2.5 h-6"
+                                      >
+                                        <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Model</span>
+                                        <div className="flex gap-0.5 flex-wrap">
+                                          {installedModels.map((model, i) => (
+                                            <motion.button
+                                              key={model.id}
+                                              initial={{ opacity: 0, scale: 0.95 }}
+                                              animate={{ opacity: 1, scale: 1 }}
+                                              transition={{ delay: 0.1 + i * 0.03 }}
+                                              onClick={() => setSelectedModel(model.id)}
+                                              className={cn(
+                                                'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                                                selectedModel === model.id
+                                                  ? 'bg-accent text-white'
+                                                  : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                                              )}
+                                            >
+                                              {model.name}
+                                            </motion.button>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+
+                                    {/* Style selector */}
+                                    <motion.div
+                                      initial={{ opacity: 0, y: -4 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      transition={{ delay: 0.15 }}
+                                      className="flex items-center gap-2.5 h-6"
+                                    >
+                                      <span className="text-[11px] text-text-tertiary uppercase tracking-wide w-14 shrink-0">Style</span>
+                                      <div className="flex gap-0.5">
+                                        <button
+                                          onClick={() => setSelectedStyle('sentence')}
+                                          className={cn(
+                                            'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                                            selectedStyle === 'sentence'
+                                              ? 'bg-accent text-white'
+                                              : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                                          )}
+                                          title="Natural phrase groupings like movie subtitles"
+                                        >
+                                          Sentence
+                                        </button>
+                                        <button
+                                          onClick={() => setSelectedStyle('word')}
+                                          className={cn(
+                                            'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
+                                            selectedStyle === 'word'
+                                              ? 'bg-accent text-white'
+                                              : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                                          )}
+                                          title="One word per subtitle for karaoke-style timing"
+                                        >
+                                          Word
+                                        </button>
+                                      </div>
+                                    </motion.div>
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     )}
 
-                    {/* Style selector */}
-                    <div className="flex gap-0.5">
-                      <button
-                        onClick={() => setSelectedStyle('sentence')}
-                        className={cn(
-                          'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
-                          selectedStyle === 'sentence'
-                            ? 'bg-accent text-white'
-                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
-                        )}
-                        title="Natural phrase groupings like movie subtitles"
+                    {/* Size estimate */}
+                    {estimatedSize && (
+                      <motion.p
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 }}
+                        className="text-[11px] text-text-tertiary pl-[66px]"
                       >
-                        Sentence
-                      </button>
-                      <button
-                        onClick={() => setSelectedStyle('word')}
-                        className={cn(
-                          'px-2 py-0.5 text-[11px] font-medium rounded transition-all',
-                          selectedStyle === 'word'
-                            ? 'bg-accent text-white'
-                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
-                        )}
-                        title="One word per subtitle for karaoke-style timing"
-                      >
-                        Word
-                      </button>
-                    </div>
-                  </>
-                )}
-                {/* Show message if no models installed */}
-                {subtitlesEnabled && availableEngines.length === 0 && engines.length > 0 && (
-                  <span className="text-[10px] text-warning">No models installed - check Settings</span>
-                )}
-              </div>
-            )}
-
-            {/* Size estimate and transcription ETA */}
-            {(estimatedSize || (subtitlesEnabled && transcriptionEta)) && (
-              <p className="text-[11px] text-text-tertiary pl-[66px]">
-                {estimatedSize && <>Estimated size: ~{estimatedSize}</>}
-                {estimatedSize && subtitlesEnabled && transcriptionEta && <> · </>}
-                {subtitlesEnabled && transcriptionEta && <>Transcription: {transcriptionEta}</>}
-              </p>
-            )}
+                        Estimated size: ~{estimatedSize}
+                      </motion.p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Download button - pushed to bottom */}

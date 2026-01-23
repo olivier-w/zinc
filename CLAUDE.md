@@ -34,7 +34,7 @@ Zinc is a desktop video downloader built with **Tauri 2** (Rust backend) and **R
 
 ### Frontend (`/src`)
 - **Entry:** `main.tsx` → `App.tsx`
-- **Components:** `/components` - UI components (URLInput, VideoPreview, DownloadList, Settings, etc.)
+- **Components:** `/components` - UI components (URLInput, VideoPreview, DownloadsTray, Settings, etc.)
 - **Hooks:** `/hooks` - State management (useDownload, useSettings, useToast)
 - **Tauri Bridge:** `/lib/tauri.ts` - Wraps `invoke()` calls to backend commands
 - **Types:** `/lib/types.ts` - TypeScript interfaces matching Rust structs
@@ -55,8 +55,16 @@ The transcription system uses a trait-based plugin architecture:
 - **`engine.rs`** - Defines `TranscriptionEngine` trait and common types
 - **`mod.rs`** - `TranscriptionDispatcher` manages available engines
 - **Engine implementations:**
-  - `whisper_rs_engine.rs` - Native Rust whisper-rs with CUDA support (primary, GPU-accelerated, multi-language)
+  - `whisper_rs_engine.rs` - Native Rust whisper-rs with CUDA support (primary engine)
   - `moonshine.rs` - Moonshine via sherpa-onnx (fast CPU fallback, English-only)
+
+**Whisper-rs Engine Details:**
+- Uses GGML models from Hugging Face (ggerganov/whisper.cpp)
+- Models: tiny (75MB), base (142MB), small (466MB), medium (1.5GB), large-v3 (3.1GB)
+- GPU acceleration via CUDA when available (auto-detects via nvidia-smi)
+- Supports 99+ languages with auto-detection
+- Two transcription styles: "sentence" (natural phrases) or "word" (karaoke-style)
+- Speed multipliers range from 32x (tiny/GPU) to 0.2x (large-v3/CPU)
 
 **Adding a new engine:** Implement `TranscriptionEngine` trait and register in `TranscriptionDispatcher::new()`.
 

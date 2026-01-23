@@ -1,15 +1,16 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { isValidUrl } from '@/lib/utils';
-import { ClipboardIcon, DownloadIcon, LoaderIcon } from './Icons';
+import { DownloadIcon, LoaderIcon } from './Icons';
 
 interface URLInputProps {
   onSubmit: (url: string) => void;
   isLoading?: boolean;
   disabled?: boolean;
+  variant?: 'hero' | 'compact';
 }
 
-export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLInputProps) {
+export function URLInput({ onSubmit, isLoading = false, disabled = false, variant = 'hero' }: URLInputProps) {
   const [url, setUrl] = useState('');
   const [shake, setShake] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -45,17 +46,6 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
     window.addEventListener('focus', checkClipboard);
     return () => window.removeEventListener('focus', checkClipboard);
   }, [url]);
-
-  const handlePaste = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        setUrl(text.trim());
-      }
-    } catch {
-      // Clipboard access denied
-    }
-  }, []);
 
   const handleSubmit = useCallback((e?: React.FormEvent) => {
     e?.preventDefault();
@@ -106,12 +96,15 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
     }
   }, []);
 
+  const isHero = variant === 'hero';
+
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-3xl">
-      <motion.div
+    <form onSubmit={handleSubmit} className={`w-full transition-all duration-300 ${isHero ? 'max-w-2xl' : 'max-w-xl'}`}>
+      <div
         className={`
-          relative flex items-center gap-2 p-3 rounded-full
-          glass transition-all duration-300
+          relative flex items-center gap-2 rounded-full
+          glass transition-all duration-300 ease-out
+          ${isHero ? 'p-4' : 'p-2'}
           ${shake ? 'shake' : ''}
           ${isLoading ? 'glow-loading' : ''}
           ${!isLoading && isValid === true ? 'glow-success' : ''}
@@ -136,8 +129,10 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
           disabled={disabled || isLoading}
           className={`
             flex-1 bg-transparent text-text-primary placeholder-text-tertiary
-            px-4 py-3.5 text-base outline-none focus:outline-none focus-visible:outline-none
+            outline-none focus:outline-none focus-visible:outline-none
             disabled:opacity-50 disabled:cursor-not-allowed
+            transition-all duration-300
+            ${isHero ? 'px-4 py-3 text-lg' : 'px-3 py-2 text-base'}
           `}
           aria-label="Video URL"
           aria-invalid={isValid === false}
@@ -145,42 +140,34 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false }: URLI
         />
 
         <button
-          type="button"
-          onClick={handlePaste}
-          disabled={disabled || isLoading}
-          className={`
-            p-3 rounded-full text-text-secondary hover:text-text-primary
-            hover:bg-white/10 transition-colors
-            disabled:opacity-50 disabled:cursor-not-allowed
-          `}
-          aria-label="Paste from clipboard"
-        >
-          <ClipboardIcon className="w-5 h-5" />
-        </button>
-
-        <motion.button
           type="submit"
           disabled={disabled || isLoading || !isValid}
           className={`
-            p-3.5 rounded-full btn-gradient text-white
-            flex items-center justify-center min-w-[52px]
+            rounded-full btn-gradient text-white
+            flex items-center justify-center transition-all duration-300
             disabled:opacity-50 disabled:cursor-not-allowed
+            ${isHero ? 'p-4 min-w-[56px]' : 'p-3 min-w-[44px]'}
           `}
-          whileTap={{ scale: 0.95 }}
           aria-label={isLoading ? 'Loading video info' : 'Get video info'}
         >
           {isLoading ? (
-            <LoaderIcon className="w-5 h-5 animate-spin" />
+            <LoaderIcon className={`animate-spin transition-all duration-300 ${isHero ? 'w-6 h-6' : 'w-5 h-5'}`} />
           ) : (
-            <DownloadIcon className="w-5 h-5" />
+            <DownloadIcon className={`transition-all duration-300 ${isHero ? 'w-6 h-6' : 'w-5 h-5'}`} />
           )}
-        </motion.button>
-      </motion.div>
+        </button>
+      </div>
 
       {isValid === false && url.trim() !== '' && (
-        <p id="url-error" className="mt-2 text-sm text-error text-center" role="alert">
+        <motion.p
+          id="url-error"
+          className="mt-2 text-sm text-error text-center"
+          role="alert"
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           Please enter a valid URL
-        </p>
+        </motion.p>
       )}
     </form>
   );
