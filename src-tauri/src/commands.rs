@@ -557,6 +557,66 @@ pub async fn get_transcription_speed_multiplier(
     Ok(manager.get_speed_multiplier(&engine_id, &model_id, use_gpu))
 }
 
+// Local file transcription
+
+#[tauri::command]
+pub async fn transcribe_local_file(
+    app: AppHandle,
+    file_path: String,
+    engine_id: String,
+    model_id: String,
+    style: String,
+) -> Result<(), String> {
+    let video_path = PathBuf::from(&file_path);
+
+    if !video_path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+
+    // Create progress channel for transcription
+    let (transcribe_tx, mut transcribe_rx) = mpsc::channel::<TranscribeProgress>(100);
+
+    let app_for_progress = app.clone();
+
+    // Spawn task to forward transcription progress
+    tokio::spawn(async move {
+        while let Some(progress) = transcribe_rx.recv().await {
+            let _ = app_for_progress.emit("transcribe-progress", &progress);
+        }
+    });
+
+    let transcription_manager = TranscriptionManager::new();
+
+    log::info!(
+        "Starting local file transcription for: {:?} with engine: {}, model: {}, style: {}",
+        video_path,
+        engine_id,
+        model_id,
+        style
+    );
+
+    match transcription_manager
+        .process_video(
+            &video_path,
+            &engine_id,
+            &model_id,
+            None, // Language is auto-detected
+            &style,
+            transcribe_tx,
+        )
+        .await
+    {
+        Ok(result) => {
+            log::info!("Local file transcription successful: {:?}", result);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Local file transcription failed: {}", e);
+            Err(e)
+        }
+    }
+}
+
 // Network interface commands
 
 #[tauri::command]

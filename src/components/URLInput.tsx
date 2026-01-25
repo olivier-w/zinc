@@ -1,16 +1,17 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { isValidUrl } from '@/lib/utils';
-import { DownloadIcon, LoaderIcon, AlertCircleIcon } from './Icons';
+import { DownloadIcon, LoaderIcon, AlertCircleIcon, FileVideoIcon } from './Icons';
 
 interface URLInputProps {
   onSubmit: (url: string) => void;
+  onLocalFile?: (filePath: string) => void;
   isLoading?: boolean;
   disabled?: boolean;
   variant?: 'hero' | 'compact';
 }
 
-export function URLInput({ onSubmit, isLoading = false, disabled = false, variant: _variant = 'hero' }: URLInputProps) {
+export function URLInput({ onSubmit, onLocalFile, isLoading = false, disabled = false, variant: _variant = 'hero' }: URLInputProps) {
   const [url, setUrl] = useState('');
   const [shake, setShake] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -145,6 +146,29 @@ export function URLInput({ onSubmit, isLoading = false, disabled = false, varian
           aria-invalid={isValid === false}
           aria-describedby={isValid === false ? 'url-error' : undefined}
         />
+
+        {onLocalFile && (
+          <button
+            type="button"
+            onClick={async () => {
+              const { selectVideoFile } = await import('@/lib/tauri');
+              const filePath = await selectVideoFile();
+              if (filePath) {
+                onLocalFile(filePath);
+              }
+            }}
+            disabled={disabled || isLoading}
+            className={`
+              rounded-full bg-white/5 hover:bg-white/10 text-text-secondary hover:text-text-primary
+              flex items-center justify-center transition-all duration-300
+              disabled:opacity-50 disabled:cursor-not-allowed p-3 min-w-[44px]
+            `}
+            aria-label="Select local video file"
+            title="Transcribe local file"
+          >
+            <FileVideoIcon className="w-5 h-5" />
+          </button>
+        )}
 
         <button
           type="submit"

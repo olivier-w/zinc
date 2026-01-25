@@ -177,6 +177,31 @@ export function onTranscriptionInstallProgress(
   });
 }
 
+// Local file transcription functions
+
+export async function selectVideoFile(): Promise<string | null> {
+  const selected = await open({
+    multiple: false,
+    title: 'Select Video File',
+    filters: [
+      {
+        name: 'Video Files',
+        extensions: ['mp4', 'mkv', 'webm', 'mov', 'avi', 'm4v', 'wmv', 'flv'],
+      },
+    ],
+  });
+  return selected as string | null;
+}
+
+export async function transcribeLocalFile(
+  filePath: string,
+  engineId: string,
+  modelId: string,
+  style: string
+): Promise<void> {
+  return invoke<void>('transcribe_local_file', { filePath, engineId, modelId, style });
+}
+
 // Network interface functions
 
 export async function listNetworkInterfaces(): Promise<NetworkInterface[]> {
