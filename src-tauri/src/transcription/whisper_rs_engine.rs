@@ -434,9 +434,9 @@ impl WhisperRsEngine {
 
         let _ = progress_tx
             .send(TranscribeProgress {
-                stage: "complete".to_string(),
-                progress: 100.0,
-                message: "Transcription complete".to_string(),
+                stage: "transcribing".to_string(),
+                progress: 95.0,
+                message: "Transcription complete, preparing to embed...".to_string(),
             })
             .await;
 
@@ -833,9 +833,9 @@ impl TranscriptionEngine for WhisperRsEngine {
 
         let _ = progress_tx
             .send(TranscribeProgress {
-                stage: "complete".to_string(),
-                progress: 100.0,
-                message: "Transcription complete".to_string(),
+                stage: "transcribing".to_string(),
+                progress: 95.0,
+                message: "Transcription complete, preparing to embed...".to_string(),
             })
             .await;
 
