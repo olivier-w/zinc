@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { Download } from '@/lib/types';
 import { openFile, openFolder } from '@/lib/tauri';
 import { DownloadRow } from './DownloadRow';
-import { ChevronDownIcon, TrashIcon, LoaderIcon } from './Icons';
+import { ChevronDownIcon, TrashIcon } from './Icons';
 
 interface DownloadsSectionProps {
   downloads: Download[];
@@ -46,14 +46,6 @@ export function DownloadsSection({
     return null;
   }
 
-  const activeCount = downloads.filter(d =>
-    d.status === 'downloading' ||
-    (d.task_type === 'download' && d.status === 'pending') ||
-    d.status === 'transcribing' ||
-    d.status.startsWith('transcribing:') ||
-    (d.task_type === 'local_transcribe' && d.status === 'pending')
-  ).length;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -74,14 +66,6 @@ export function DownloadsSection({
           <ChevronDownIcon className={`w-4 h-4 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
           <span className="font-medium">Downloads</span>
           <span className="text-text-tertiary">({downloads.length})</span>
-
-          {/* Active indicator */}
-          {activeCount > 0 && (
-            <span className="flex items-center gap-1.5 ml-2 text-accent">
-              <LoaderIcon className="w-3.5 h-3.5 animate-spin" />
-              <span className="text-xs">{activeCount} active</span>
-            </span>
-          )}
         </button>
 
         {/* Clear completed button */}

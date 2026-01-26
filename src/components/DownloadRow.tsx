@@ -4,8 +4,7 @@ import type { Download, TranscriptionEngine } from '@/lib/types';
 import { cn, truncate } from '@/lib/utils';
 import { getSpeedMultiplier } from '@/lib/constants';
 import { getTranscriptionEngines } from '@/lib/tauri';
-import { ProgressRing } from './ProgressRing';
-import { XIcon, FolderIcon, PlayIcon, TrashIcon, ChevronDownIcon, SubtitlesIcon } from './Icons';
+import { XIcon, FolderIcon, PlayIcon, TrashIcon, ChevronDownIcon, SubtitlesIcon, CheckIcon } from './Icons';
 
 const TRANSCRIBE_STAGE_MESSAGES: Record<string, string> = {
   extracting: 'Extracting audio...',
@@ -135,17 +134,6 @@ export const DownloadRow = memo(function DownloadRow({
   const isError = download.status === 'error';
   const isCancelled = download.status === 'cancelled';
 
-  // Determine progress ring status
-  const ringStatus = useMemo(() => {
-    if (isPendingLocalTranscribe) return 'pending';
-    if (isDownloading) return 'downloading';
-    if (isTranscribing) return 'transcribing';
-    if (isCompleted) return 'completed';
-    if (isError) return 'error';
-    if (isCancelled) return 'cancelled';
-    return 'pending';
-  }, [isPendingLocalTranscribe, isDownloading, isTranscribing, isCompleted, isError, isCancelled]);
-
   // Get progress value
   const progressValue = useMemo(() => {
     if (isDownloading) return download.progress;
@@ -173,19 +161,25 @@ export const DownloadRow = memo(function DownloadRow({
     return `~${minutes}m`;
   }, [isTranscribing, download.duration, download.whisper_model, download.transcription_engine]);
 
-  // Status text for collapsed view
+  // Status text for collapsed view - combined progress + speed
   const statusText = useMemo(() => {
     if (isPendingLocalTranscribe) return 'Ready';
-    if (isDownloading) return download.speed || `${download.progress.toFixed(0)}%`;
+    if (isDownloading) {
+      const pct = `${download.progress.toFixed(1)}%`;
+      return download.speed ? `${pct} ${download.speed}` : pct;
+    }
     if (isTranscribing) {
-      const msg = download.transcription_message || transcribeStage;
-      return msg.replace('...', '');
+      const msg = (download.transcription_message || transcribeStage).replace('...', '');
+      if (download.transcription_progress != null && download.transcription_progress > 0) {
+        return `${msg} ${download.transcription_progress.toFixed(0)}%`;
+      }
+      return msg;
     }
     if (isCompleted) return 'Done';
-    if (isError) return 'Error';
+    if (isError) return formatErrorMessage(download.error || 'Error');
     if (isCancelled) return 'Cancelled';
     return '';
-  }, [isPendingLocalTranscribe, isDownloading, isTranscribing, isCompleted, isError, isCancelled, download.speed, download.progress, download.transcription_message, transcribeStage]);
+  }, [isPendingLocalTranscribe, isDownloading, isTranscribing, isCompleted, isError, isCancelled, download.speed, download.progress, download.transcription_message, download.transcription_progress, transcribeStage, download.error]);
 
   return (
     <motion.div
@@ -206,22 +200,35 @@ export const DownloadRow = memo(function DownloadRow({
         !isCompleted && !isError && !isCancelled && !isActive && !isPendingLocalTranscribe && 'border-border/50'
       )}
     >
+      {/* Thin progress bar at top */}
+      {isActive && (
+        <div className="progress-bar-inline">
+          <motion.div
+            className={cn(
+              'progress-bar-inline-fill',
+              isDownloading && 'downloading',
+              isTranscribing && 'transcribing'
+            )}
+            initial={{ width: 0 }}
+            animate={{ width: `${progressValue}%` }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          />
+        </div>
+      )}
+
       {/* Collapsed row - always visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors text-left"
       >
-        {/* Progress ring or subtitle icon for local transcribe */}
-        {download.task_type === 'local_transcribe' && !isTranscribing && !isCompleted && !isError ? (
-          <div className="w-6 h-6 flex items-center justify-center">
-            <SubtitlesIcon className="w-5 h-5 text-accent" />
+        {/* Status icon for non-active states */}
+        {!isActive && (
+          <div className="w-5 h-5 flex items-center justify-center shrink-0">
+            {isCompleted && <CheckIcon className="w-4 h-4 text-success" />}
+            {isError && <XIcon className="w-4 h-4 text-error" />}
+            {isCancelled && <XIcon className="w-4 h-4 text-text-tertiary" />}
+            {isPendingLocalTranscribe && <SubtitlesIcon className="w-4 h-4 text-accent" />}
           </div>
-        ) : (
-          <ProgressRing
-            status={ringStatus}
-            progress={progressValue}
-            size={24}
-          />
         )}
 
         {/* Title - truncated */}
@@ -229,10 +236,12 @@ export const DownloadRow = memo(function DownloadRow({
           {truncate(download.title, 50)}
         </span>
 
-        {/* Status/Speed */}
+        {/* Status text */}
         <span className={cn(
-          'text-xs tabular-nums shrink-0',
-          (isActive || isPendingLocalTranscribe) && 'text-accent',
+          'text-xs tabular-nums shrink-0 max-w-[180px] truncate',
+          isDownloading && 'text-accent',
+          isTranscribing && 'text-purple-400',
+          isPendingLocalTranscribe && 'text-accent',
           isCompleted && 'text-success',
           isError && 'text-error',
           isCancelled && 'text-text-tertiary'
@@ -240,7 +249,7 @@ export const DownloadRow = memo(function DownloadRow({
           {statusText}
         </span>
 
-        {/* Action button */}
+        {/* Action buttons */}
         <div className="shrink-0 flex items-center gap-1">
           {isCompleted && download.output_path && (
             <button
@@ -323,26 +332,14 @@ export const DownloadRow = memo(function DownloadRow({
                     </p>
                   )}
 
-                  {/* Progress info */}
-                  {isDownloading && (
-                    <p className="text-xs text-text-secondary">
-                      <span className="text-accent font-medium">{download.progress.toFixed(1)}%</span>
-                      {download.speed && <span className="ml-2">{download.speed}</span>}
-                      {download.eta && <span className="ml-2 text-text-tertiary">ETA {download.eta}</span>}
-                    </p>
+                  {/* ETA for downloading */}
+                  {isDownloading && download.eta && (
+                    <p className="text-xs text-text-tertiary">ETA {download.eta}</p>
                   )}
 
-                  {/* Transcription info */}
-                  {isTranscribing && (
-                    <p className="text-xs text-text-secondary">
-                      <span className="text-accent">{download.transcription_message || transcribeStage}</span>
-                      {download.transcription_progress != null && download.transcription_progress > 0 && (
-                        <span className="ml-2 font-medium">{download.transcription_progress.toFixed(0)}%</span>
-                      )}
-                      {transcriptionEta && download.transcription_progress != null && download.transcription_progress < 10 && (
-                        <span className="ml-2 text-text-tertiary">ETA {transcriptionEta}</span>
-                      )}
-                    </p>
+                  {/* ETA for transcription */}
+                  {isTranscribing && transcriptionEta && download.transcription_progress != null && download.transcription_progress < 10 && (
+                    <p className="text-xs text-text-tertiary">ETA {transcriptionEta}</p>
                   )}
 
                   {/* Completed info */}
@@ -352,18 +349,6 @@ export const DownloadRow = memo(function DownloadRow({
                       {download.error && (
                         <span className="ml-2 text-warning">{download.error}</span>
                       )}
-                    </p>
-                  )}
-
-                  {/* Error message */}
-                  {isError && download.error && (
-                    <p className="text-xs text-error">{formatErrorMessage(download.error)}</p>
-                  )}
-
-                  {/* Cancelled */}
-                  {isCancelled && (
-                    <p className="text-xs text-text-tertiary">
-                      {download.task_type === 'local_transcribe' ? 'Transcription cancelled' : 'Download cancelled'}
                     </p>
                   )}
                 </div>
