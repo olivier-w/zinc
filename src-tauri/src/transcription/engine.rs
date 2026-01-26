@@ -4,6 +4,57 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+/// Extract a segment of audio using ffmpeg
+/// Returns the path to the extracted segment (16kHz mono WAV)
+pub async fn extract_audio_segment(
+    input_path: &Path,
+    output_path: &Path,
+    start_secs: f64,
+    duration_secs: f64,
+) -> Result<(), String> {
+    let input_str = input_path
+        .to_str()
+        .ok_or("Invalid input path encoding")?;
+    let output_str = output_path
+        .to_str()
+        .ok_or("Invalid output path encoding")?;
+
+    let mut cmd = Command::new(if cfg!(target_os = "windows") {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    });
+
+    cmd.args([
+        "-y",                           // Overwrite output
+        "-ss", &format!("{:.3}", start_secs), // Seek to start (before input for faster seeking)
+        "-i", input_str,                // Input file
+        "-t", &format!("{:.3}", duration_secs), // Duration
+        "-vn",                          // No video
+        "-acodec", "pcm_s16le",         // 16-bit PCM
+        "-ar", "16000",                 // 16kHz sample rate
+        "-ac", "1",                     // Mono
+        output_str,
+    ]);
+
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg segment extraction failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
 /// Format seconds as SRT timestamp (HH:MM:SS,mmm)
 pub fn format_srt_time(seconds: f64) -> String {
     let hours = (seconds / 3600.0) as u32;

@@ -1,6 +1,6 @@
 use super::{
-    format_srt_time, get_audio_duration, InstallProgress, TranscribeProgress, TranscriptionEngine,
-    TranscriptionModel,
+    extract_audio_segment, format_srt_time, get_audio_duration, InstallProgress,
+    TranscribeProgress, TranscriptionEngine, TranscriptionModel,
 };
 use crate::sherpa_manager::SherpaManager;
 use futures_util::StreamExt;
@@ -9,6 +9,11 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+/// Duration threshold for chunked transcription (5 minutes)
+const CHUNK_DURATION_SECS: f64 = 300.0;
+/// Overlap between chunks to avoid cutting mid-word (2 seconds)
+const CHUNK_OVERLAP_SECS: f64 = 2.0;
 
 /// Model download URLs from Hugging Face (GGML format)
 const MODEL_URLS: &[(&str, &str, &str)] = &[
@@ -183,6 +188,259 @@ impl WhisperRsEngine {
         }
 
         srt
+    }
+
+    /// Transcribe audio in chunks for long files
+    /// This prevents memory issues and maintains accurate timestamps
+    async fn transcribe_chunked(
+        &self,
+        audio_path: &Path,
+        model: &str,
+        language: Option<&str>,
+        style: &str,
+        duration: f64,
+        progress_tx: mpsc::Sender<TranscribeProgress>,
+    ) -> Result<PathBuf, String> {
+        let _ = progress_tx
+            .send(TranscribeProgress {
+                stage: "preparing".to_string(),
+                progress: 0.0,
+                message: "Preparing chunked transcription...".to_string(),
+            })
+            .await;
+
+        // Get model path
+        let model_path = Self::get_model_path(model)?;
+        if !model_path.exists() {
+            return Err(format!(
+                "Model '{}' is not installed. Please download it first.",
+                model
+            ));
+        }
+
+        // Calculate number of chunks
+        // Each chunk is CHUNK_DURATION_SECS with CHUNK_OVERLAP_SECS overlap
+        let effective_chunk_duration = CHUNK_DURATION_SECS - CHUNK_OVERLAP_SECS;
+        let num_chunks = ((duration - CHUNK_OVERLAP_SECS) / effective_chunk_duration).ceil() as usize;
+        let num_chunks = num_chunks.max(1);
+
+        log::info!(
+            "Chunked transcription: {:.1}s audio -> {} chunks of {:.0}s (with {:.0}s overlap)",
+            duration,
+            num_chunks,
+            CHUNK_DURATION_SECS,
+            CHUNK_OVERLAP_SECS
+        );
+
+        // Create temp directory for chunk files
+        let temp_dir = std::env::temp_dir().join(format!("zinc_whisper_chunks_{}", std::process::id()));
+        fs::create_dir_all(&temp_dir)
+            .await
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+
+        let mut all_segments: Vec<(i64, i64, String)> = Vec::new();
+
+        // Process each chunk
+        for chunk_idx in 0..num_chunks {
+            let chunk_start = chunk_idx as f64 * effective_chunk_duration;
+            let chunk_duration = if chunk_idx == num_chunks - 1 {
+                // Last chunk: extend to end of audio
+                duration - chunk_start
+            } else {
+                CHUNK_DURATION_SECS
+            };
+
+            // Skip if chunk would be too short
+            if chunk_duration < 0.5 {
+                continue;
+            }
+
+            let chunk_progress_base = (chunk_idx as f64 / num_chunks as f64) * 90.0 + 5.0;
+
+            let _ = progress_tx
+                .send(TranscribeProgress {
+                    stage: "transcribing".to_string(),
+                    progress: chunk_progress_base,
+                    message: format!(
+                        "Processing chunk {}/{} ({:.0}s - {:.0}s)...",
+                        chunk_idx + 1,
+                        num_chunks,
+                        chunk_start,
+                        chunk_start + chunk_duration
+                    ),
+                })
+                .await;
+
+            // Extract chunk audio
+            let chunk_path = temp_dir.join(format!("chunk_{}.wav", chunk_idx));
+            extract_audio_segment(audio_path, &chunk_path, chunk_start, chunk_duration).await?;
+
+            // Load chunk audio
+            let audio_samples = Self::load_audio(&chunk_path).await?;
+
+            log::info!(
+                "Chunk {}/{}: {} samples ({:.1}s) from offset {:.1}s",
+                chunk_idx + 1,
+                num_chunks,
+                audio_samples.len(),
+                chunk_duration,
+                chunk_start
+            );
+
+            // Run transcription on this chunk
+            let model_path_clone = model_path.clone();
+            let language = language.map(|s| s.to_string());
+            let style = style.to_string();
+            let progress_tx_clone = progress_tx.clone();
+            let chunk_offset_ms = (chunk_start * 1000.0) as i64;
+
+            let chunk_segments = tokio::task::spawn_blocking(move || {
+                // Create whisper context with GPU enabled
+                let mut ctx_params = WhisperContextParameters::default();
+                ctx_params.use_gpu(true);
+                ctx_params.gpu_device(0);
+
+                let ctx = WhisperContext::new_with_params(
+                    model_path_clone.to_str().unwrap(),
+                    ctx_params,
+                )
+                .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
+
+                // Create full params for transcription
+                let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+
+                // Set language
+                if let Some(lang) = &language {
+                    params.set_language(Some(lang));
+                } else {
+                    params.set_language(Some("auto"));
+                }
+
+                // Enable timestamps
+                params.set_token_timestamps(true);
+
+                // Set segment length based on style
+                if style == "word" {
+                    params.set_max_len(1);
+                }
+
+                // Set thread count
+                let num_threads = std::thread::available_parallelism()
+                    .map(|p| p.get().min(8))
+                    .unwrap_or(4) as i32;
+                params.set_n_threads(num_threads);
+
+                // Suppress non-speech tokens
+                params.set_suppress_blank(true);
+                params.set_suppress_nst(true);
+
+                // Progress callback (optional, updates within chunk)
+                let _progress_tx_inner = progress_tx_clone;
+                // Note: We don't set individual chunk progress callbacks to avoid flooding
+
+                // Create state and run inference
+                let mut state = ctx
+                    .create_state()
+                    .map_err(|e| format!("Failed to create Whisper state: {}", e))?;
+
+                state
+                    .full(params, &audio_samples)
+                    .map_err(|e| format!("Transcription failed: {}", e))?;
+
+                // Extract segments with timestamps, adjusting for chunk offset
+                let num_segments = state.full_n_segments();
+                let mut segments: Vec<(i64, i64, String)> = Vec::new();
+
+                for i in 0..num_segments {
+                    if let Some(segment) = state.get_segment(i) {
+                        let text = segment
+                            .to_str_lossy()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+                        let start = segment.start_timestamp();
+                        let end = segment.end_timestamp();
+
+                        // Convert centiseconds to milliseconds and add chunk offset
+                        let start_ms = start * 10 + chunk_offset_ms;
+                        let end_ms = end * 10 + chunk_offset_ms;
+
+                        if !text.trim().is_empty() {
+                            segments.push((start_ms, end_ms, text));
+                        }
+                    }
+                }
+
+                Ok::<Vec<(i64, i64, String)>, String>(segments)
+            })
+            .await
+            .map_err(|e| format!("Chunk transcription task failed: {}", e))??;
+
+            // Clean up chunk file immediately
+            let _ = fs::remove_file(&chunk_path).await;
+
+            // Merge segments, handling overlap deduplication
+            if !all_segments.is_empty() && !chunk_segments.is_empty() {
+                // Find the overlap boundary (where previous chunk ends in overlap region)
+                let overlap_start_ms = (chunk_start * 1000.0) as i64;
+
+                // Remove segments from previous chunk that fall entirely in overlap region
+                // (they'll be replaced by more accurate segments from current chunk)
+                all_segments.retain(|&(start, end, _)| {
+                    // Keep if segment ends before overlap starts, or starts before overlap
+                    end <= overlap_start_ms || start < overlap_start_ms
+                });
+
+                // Filter new segments to avoid duplicates in overlap region
+                for seg in chunk_segments {
+                    let (start_ms, _end_ms, _) = seg;
+                    // Only add if segment starts after overlap region, or if we have no segments there
+                    if start_ms >= overlap_start_ms {
+                        all_segments.push(seg);
+                    }
+                }
+            } else {
+                all_segments.extend(chunk_segments);
+            }
+        }
+
+        // Clean up temp directory
+        let _ = fs::remove_dir_all(&temp_dir).await;
+
+        let _ = progress_tx
+            .send(TranscribeProgress {
+                stage: "transcribing".to_string(),
+                progress: 95.0,
+                message: "Generating subtitles...".to_string(),
+            })
+            .await;
+
+        // Check if we got any transcription
+        if all_segments.is_empty() {
+            return Err(
+                "Transcription produced no text. The audio may be silent or corrupted.".to_string(),
+            );
+        }
+
+        // Sort segments by start time (should already be sorted, but ensure it)
+        all_segments.sort_by_key(|(start, _, _)| *start);
+
+        // Generate SRT file
+        let srt_content = Self::generate_srt_from_segments(all_segments);
+        let srt_path = audio_path.with_extension("srt");
+
+        fs::write(&srt_path, srt_content)
+            .await
+            .map_err(|e| format!("Failed to write SRT file: {}", e))?;
+
+        let _ = progress_tx
+            .send(TranscribeProgress {
+                stage: "complete".to_string(),
+                progress: 100.0,
+                message: "Transcription complete".to_string(),
+            })
+            .await;
+
+        Ok(srt_path)
     }
 }
 
@@ -393,6 +651,21 @@ impl TranscriptionEngine for WhisperRsEngine {
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
     ) -> Result<PathBuf, String> {
+        // Check audio duration first to decide on chunked vs single-shot transcription
+        let duration = get_audio_duration(audio_path).await.unwrap_or(60.0);
+
+        // Use chunked transcription for long audio files
+        if duration > CHUNK_DURATION_SECS {
+            log::info!(
+                "Audio duration {:.1}s exceeds chunk threshold {:.0}s, using chunked transcription",
+                duration,
+                CHUNK_DURATION_SECS
+            );
+            return self
+                .transcribe_chunked(audio_path, model, language, style, duration, progress_tx)
+                .await;
+        }
+
         let _ = progress_tx
             .send(TranscribeProgress {
                 stage: "preparing".to_string(),
@@ -418,9 +691,8 @@ impl TranscriptionEngine for WhisperRsEngine {
             })
             .await;
 
-        // Load audio
+        // Load audio (for short files, load all at once)
         let audio_samples = Self::load_audio(audio_path).await?;
-        let duration = get_audio_duration(audio_path).await.unwrap_or(60.0);
 
         log::info!(
             "Loaded {} samples ({:.1}s) from {:?}",
