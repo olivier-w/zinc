@@ -11,6 +11,8 @@ interface DownloadsSectionProps {
   onClear: (id: string) => void;
   onClearCompleted: () => void;
   hasCompletedDownloads: boolean;
+  onStartLocalTranscription?: (taskId: string) => void;
+  onUpdateTranscriptionSettings?: (taskId: string, settings: { engine?: string; model?: string }) => void;
 }
 
 export function DownloadsSection({
@@ -19,6 +21,8 @@ export function DownloadsSection({
   onClear,
   onClearCompleted,
   hasCompletedDownloads,
+  onStartLocalTranscription,
+  onUpdateTranscriptionSettings,
 }: DownloadsSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -44,9 +48,10 @@ export function DownloadsSection({
 
   const activeCount = downloads.filter(d =>
     d.status === 'downloading' ||
-    d.status === 'pending' ||
+    (d.task_type === 'download' && d.status === 'pending') ||
     d.status === 'transcribing' ||
-    d.status.startsWith('transcribing:')
+    d.status.startsWith('transcribing:') ||
+    (d.task_type === 'local_transcribe' && d.status === 'pending')
   ).length;
 
   return (
@@ -103,6 +108,8 @@ export function DownloadsSection({
                 onClear={onClear}
                 onOpenFile={handleOpenFile}
                 onOpenFolder={handleOpenFolder}
+                onStartLocalTranscription={onStartLocalTranscription}
+                onUpdateTranscriptionSettings={onUpdateTranscriptionSettings}
               />
             ))}
           </AnimatePresence>

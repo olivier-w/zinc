@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Extract a segment of audio using ffmpeg
 /// Returns the path to the extracted segment (16kHz mono WAV)
@@ -279,5 +279,6 @@ pub trait TranscriptionEngine: Send + Sync {
         language: Option<&str>,
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String>;
 }

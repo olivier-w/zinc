@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::fs;
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Manages all transcription engines and provides a unified API
 pub struct TranscriptionManager {
@@ -106,6 +106,7 @@ impl TranscriptionManager {
         language: Option<&str>,
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
         let engine = self
             .dispatcher
@@ -128,7 +129,7 @@ impl TranscriptionManager {
 
         // Run transcription
         engine
-            .transcribe(file_path, model_id, language, style, progress_tx)
+            .transcribe(file_path, model_id, language, style, progress_tx, cancel_rx)
             .await
     }
 
@@ -136,7 +137,13 @@ impl TranscriptionManager {
     async fn extract_audio(
         video_path: &Path,
         progress_tx: &mpsc::Sender<TranscribeProgress>,
+        cancel_rx: &watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
+        // Check for cancellation before starting
+        if *cancel_rx.borrow() {
+            return Err("Cancelled".to_string());
+        }
+
         let _ = progress_tx
             .send(TranscribeProgress {
                 stage: "extracting".to_string(),
@@ -179,15 +186,32 @@ impl TranscriptionManager {
 
         log::info!("Extracting audio from {:?} to {:?}", video_path, audio_path);
 
-        let output = cmd
-            .output()
-            .await
+        // Spawn the process and monitor for cancellation
+        let mut child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::error!("Audio extraction failed: {}", stderr);
-            return Err(format!("Audio extraction failed: {}", stderr));
+        let mut cancel_rx_clone = cancel_rx.clone();
+
+        // Wait for process completion or cancellation
+        tokio::select! {
+            result = child.wait() => {
+                let status = result.map_err(|e| format!("Failed to wait for ffmpeg: {}", e))?;
+                if !status.success() {
+                    // Read stderr for error message
+                    return Err("Audio extraction failed".to_string());
+                }
+            }
+            _ = cancel_rx_clone.changed() => {
+                if *cancel_rx_clone.borrow() {
+                    // Kill the process
+                    let _ = child.kill().await;
+                    // Clean up temp files
+                    let _ = fs::remove_file(&audio_path).await;
+                    let _ = fs::remove_dir(&temp_dir).await;
+                    return Err("Cancelled".to_string());
+                }
+            }
         }
 
         log::info!("Audio extraction complete: {:?}", audio_path);
@@ -212,6 +236,7 @@ impl TranscriptionManager {
         language: Option<&str>,
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
         log::info!(
             "process_video called for: {:?} with engine: {}, model: {}, style: {}",
@@ -220,6 +245,11 @@ impl TranscriptionManager {
             model_id,
             style
         );
+
+        // Check for cancellation
+        if *cancel_rx.borrow() {
+            return Err("Cancelled".to_string());
+        }
 
         // Check ffmpeg availability
         if !Self::check_ffmpeg().await {
@@ -245,7 +275,16 @@ impl TranscriptionManager {
         log::info!("SRT path: {:?}, Output path: {:?}", srt_path, output_path);
 
         // Step 1: Extract audio from video (16kHz mono WAV)
-        let audio_path = Self::extract_audio(video_path, &progress_tx).await?;
+        let audio_path = Self::extract_audio(video_path, &progress_tx, &cancel_rx).await?;
+
+        // Check for cancellation before transcription
+        if *cancel_rx.borrow() {
+            // Clean up temp audio file
+            let _ = fs::remove_file(&audio_path).await;
+            let temp_dir = audio_path.parent().unwrap_or(Path::new("."));
+            let _ = fs::remove_dir(temp_dir).await;
+            return Err("Cancelled".to_string());
+        }
 
         // Step 2: Transcribe
         log::info!(
@@ -264,6 +303,7 @@ impl TranscriptionManager {
                 language,
                 style,
                 progress_tx.clone(),
+                cancel_rx.clone(),
             )
             .await;
 
@@ -286,9 +326,15 @@ impl TranscriptionManager {
             srt_path.exists()
         );
 
+        // Check for cancellation before embedding
+        if *cancel_rx.borrow() {
+            let _ = fs::remove_file(&srt_path).await;
+            return Err("Cancelled".to_string());
+        }
+
         // Step 2: Embed subtitles
         log::info!("Starting subtitle embedding...");
-        Self::embed_subtitles(video_path, &srt_path, &output_path, &progress_tx).await?;
+        Self::embed_subtitles(video_path, &srt_path, &output_path, &progress_tx, &cancel_rx).await?;
         log::info!(
             "Embedding complete, output exists: {}",
             output_path.exists()
@@ -337,7 +383,13 @@ impl TranscriptionManager {
         srt_path: &Path,
         output_path: &Path,
         progress_tx: &mpsc::Sender<TranscribeProgress>,
+        cancel_rx: &watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
+        // Check for cancellation before starting
+        if *cancel_rx.borrow() {
+            return Err("Cancelled".to_string());
+        }
+
         log::info!(
             "embed_subtitles called: video={:?}, srt={:?}, output={:?}",
             video_path,
@@ -415,15 +467,30 @@ impl TranscriptionManager {
 
         log::info!("Running ffmpeg for subtitle embedding...");
 
-        let output = cmd
-            .output()
-            .await
+        // Spawn the process and monitor for cancellation
+        let mut child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::error!("ffmpeg muxing failed: {}", stderr);
-            return Err(format!("ffmpeg muxing error: {}", stderr));
+        let mut cancel_rx_clone = cancel_rx.clone();
+
+        // Wait for process completion or cancellation
+        tokio::select! {
+            result = child.wait() => {
+                let status = result.map_err(|e| format!("Failed to wait for ffmpeg: {}", e))?;
+                if !status.success() {
+                    return Err("ffmpeg muxing failed".to_string());
+                }
+            }
+            _ = cancel_rx_clone.changed() => {
+                if *cancel_rx_clone.borrow() {
+                    // Kill the process
+                    let _ = child.kill().await;
+                    // Clean up partial output
+                    let _ = fs::remove_file(output_path).await;
+                    return Err("Cancelled".to_string());
+                }
+            }
         }
 
         log::info!("ffmpeg muxing successful");

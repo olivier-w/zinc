@@ -49,6 +49,8 @@ export interface Download {
   transcription_engine: string | null;
   transcription_progress: number | null;
   transcription_message: string | null;
+  task_type: 'download' | 'local_transcribe';
+  source_path: string | null;
 }
 
 export interface AppConfig {

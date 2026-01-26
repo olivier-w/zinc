@@ -58,8 +58,10 @@ pub fn run() {
             commands::install_transcription_engine,
             commands::download_transcription_model,
             commands::get_transcription_speed_multiplier,
-            // Local file transcription
-            commands::transcribe_local_file,
+            // Local file transcription (unified with downloads)
+            commands::add_local_transcription,
+            commands::start_local_transcription,
+            commands::update_transcription_settings,
             // Network interface
             commands::list_network_interfaces,
         ])

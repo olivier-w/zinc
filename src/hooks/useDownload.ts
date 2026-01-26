@@ -5,6 +5,9 @@ import {
   cancelDownload as apiCancelDownload,
   clearDownload as apiClearDownload,
   clearCompletedDownloads as apiClearCompleted,
+  addLocalTranscription as apiAddLocalTranscription,
+  startLocalTranscription as apiStartLocalTranscription,
+  updateTranscriptionSettings as apiUpdateTranscriptionSettings,
   getDownloads,
   onDownloadProgress,
 } from '@/lib/tauri';
@@ -104,6 +107,8 @@ export function useDownload() {
         transcription_engine: subtitleSettings?.enabled ? subtitleSettings.engine : null,
         transcription_progress: null,
         transcription_message: null,
+        task_type: 'download',
+        source_path: null,
       });
       return next;
     });
@@ -145,6 +150,78 @@ export function useDownload() {
     });
   }, []);
 
+  const addLocalTranscription = useCallback(async (
+    filePath: string,
+    engine: string,
+    model: string,
+    style: string
+  ): Promise<string> => {
+    // Extract filename for title
+    const parts = filePath.replace(/\\/g, '/').split('/');
+    const title = parts[parts.length - 1];
+
+    const taskId = await apiAddLocalTranscription(filePath, title, engine, model, style);
+
+    // Optimistic update
+    setDownloads(prev => {
+      const next = new Map(prev);
+      next.set(taskId, {
+        id: taskId,
+        url: '',
+        title,
+        thumbnail: null,
+        status: 'pending',
+        progress: 0,
+        speed: null,
+        eta: null,
+        output_path: filePath,
+        format: '',
+        error: null,
+        duration: null,
+        whisper_model: model,
+        transcription_engine: engine,
+        transcription_progress: null,
+        transcription_message: null,
+        task_type: 'local_transcribe',
+        source_path: filePath,
+      });
+      return next;
+    });
+
+    return taskId;
+  }, []);
+
+  const startLocalTranscription = useCallback(async (taskId: string) => {
+    await apiStartLocalTranscription(taskId);
+    setDownloads(prev => {
+      const next = new Map(prev);
+      const task = next.get(taskId);
+      if (task) {
+        next.set(taskId, { ...task, status: 'transcribing:extracting' });
+      }
+      return next;
+    });
+  }, []);
+
+  const updateTranscriptionSettings = useCallback(async (
+    taskId: string,
+    settings: { engine?: string; model?: string; style?: string }
+  ) => {
+    await apiUpdateTranscriptionSettings(taskId, settings.engine, settings.model, settings.style);
+    setDownloads(prev => {
+      const next = new Map(prev);
+      const task = next.get(taskId);
+      if (task) {
+        next.set(taskId, {
+          ...task,
+          transcription_engine: settings.engine ?? task.transcription_engine,
+          whisper_model: settings.model ?? task.whisper_model,
+        });
+      }
+      return next;
+    });
+  }, []);
+
   // Derived state - reverse so latest downloads appear first
   const downloadList = useMemo(
     () => Array.from(downloads.values()).reverse(),
@@ -175,5 +252,8 @@ export function useDownload() {
     cancelDownload,
     clearDownload,
     clearCompleted,
+    addLocalTranscription,
+    startLocalTranscription,
+    updateTranscriptionSettings,
   };
 }

@@ -40,6 +40,8 @@ pub struct Download {
     pub transcription_engine: Option<String>,
     pub transcription_progress: Option<f64>,
     pub transcription_message: Option<String>,
+    pub task_type: String,           // "download" | "local_transcribe"
+    pub source_path: Option<String>, // Input file path for local transcriptions
 }
 
 pub struct AppState {
@@ -115,6 +117,8 @@ pub async fn start_download(
         transcription_engine: if generate_subtitles { Some(transcription_engine.clone()) } else { None },
         transcription_progress: None,
         transcription_message: None,
+        task_type: "download".to_string(),
+        source_path: None,
     };
 
     state.downloads.lock().await.insert(download_id.clone(), download.clone());
@@ -192,6 +196,7 @@ pub async fn start_download(
             }
         }
 
+        let cancel_rx_for_transcription = cancel_rx.clone();
         match YtDlp::start_download(&url, options.clone(), progress_tx, download_id_clone.clone(), cancel_rx).await {
             Ok(path) => {
                 let path_str = path.to_string_lossy().to_string();
@@ -250,7 +255,8 @@ pub async fn start_download(
                         &transcription_model,
                         None, // Language is auto-detected by all engines
                         &transcription_style,
-                        transcribe_tx
+                        transcribe_tx,
+                        cancel_rx_for_transcription,
                     ).await {
                         Ok(result) => {
                             log::info!("Transcription successful: {:?}", result);
@@ -557,64 +563,216 @@ pub async fn get_transcription_speed_multiplier(
     Ok(manager.get_speed_multiplier(&engine_id, &model_id, use_gpu))
 }
 
-// Local file transcription
+// Local file transcription - unified with downloads system
 
+/// Add a local file for transcription (creates a pending task)
 #[tauri::command]
-pub async fn transcribe_local_file(
+pub async fn add_local_transcription(
     app: AppHandle,
+    state: State<'_, Arc<AppState>>,
     file_path: String,
-    engine_id: String,
-    model_id: String,
-    style: String,
-) -> Result<(), String> {
+    title: String,
+    engine: String,
+    model: String,
+    _style: String,
+) -> Result<String, String> {
     let video_path = PathBuf::from(&file_path);
 
     if !video_path.exists() {
         return Err(format!("File not found: {}", file_path));
     }
 
-    // Create progress channel for transcription
-    let (transcribe_tx, mut transcribe_rx) = mpsc::channel::<TranscribeProgress>(100);
+    let task_id = Uuid::new_v4().to_string();
 
-    let app_for_progress = app.clone();
+    let download = Download {
+        id: task_id.clone(),
+        url: String::new(),
+        title,
+        thumbnail: None,
+        status: "pending".to_string(),
+        progress: 0.0,
+        speed: None,
+        eta: None,
+        output_path: Some(file_path.clone()),
+        format: String::new(),
+        error: None,
+        duration: None,
+        whisper_model: Some(model),
+        transcription_engine: Some(engine),
+        transcription_progress: None,
+        transcription_message: None,
+        task_type: "local_transcribe".to_string(),
+        source_path: Some(file_path),
+    };
 
-    // Spawn task to forward transcription progress
-    tokio::spawn(async move {
-        while let Some(progress) = transcribe_rx.recv().await {
-            let _ = app_for_progress.emit("transcribe-progress", &progress);
+    state.downloads.lock().await.insert(task_id.clone(), download.clone());
+    let _ = app.emit("download-progress", download);
+
+    Ok(task_id)
+}
+
+/// Start transcription for a pending local transcription task
+#[tauri::command]
+pub async fn start_local_transcription(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    task_id: String,
+) -> Result<(), String> {
+    // Get task info
+    let (file_path, engine_id, model_id, style) = {
+        let downloads = state.downloads.lock().await;
+        let task = downloads.get(&task_id)
+            .ok_or_else(|| format!("Task not found: {}", task_id))?;
+
+        if task.task_type != "local_transcribe" {
+            return Err("Not a local transcription task".to_string());
         }
-    });
+        if task.status != "pending" {
+            return Err(format!("Task is not pending, status: {}", task.status));
+        }
 
-    let transcription_manager = TranscriptionManager::new();
+        let source = task.source_path.clone()
+            .ok_or_else(|| "No source path".to_string())?;
+        let engine = task.transcription_engine.clone()
+            .ok_or_else(|| "No engine specified".to_string())?;
+        let model = task.whisper_model.clone()
+            .ok_or_else(|| "No model specified".to_string())?;
 
-    log::info!(
-        "Starting local file transcription for: {:?} with engine: {}, model: {}, style: {}",
-        video_path,
-        engine_id,
-        model_id,
-        style
-    );
+        (source, engine, model, "sentence".to_string())  // TODO: store style in Download
+    };
 
-    match transcription_manager
-        .process_video(
-            &video_path,
-            &engine_id,
-            &model_id,
-            None, // Language is auto-detected
-            &style,
-            transcribe_tx,
-        )
-        .await
+    let video_path = PathBuf::from(&file_path);
+
+    // Create cancel channel
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    state.cancel_senders.lock().await.insert(task_id.clone(), cancel_tx);
+
+    // Update status to transcribing
     {
-        Ok(result) => {
-            log::info!("Local file transcription successful: {:?}", result);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("Local file transcription failed: {}", e);
-            Err(e)
+        let mut downloads = state.downloads.lock().await;
+        if let Some(download) = downloads.get_mut(&task_id) {
+            download.status = "transcribing:extracting".to_string();
+            let _ = app.emit("download-progress", download.clone());
         }
     }
+
+    let state_clone = Arc::clone(&state.inner());
+    let app_clone = app.clone();
+    let task_id_clone = task_id.clone();
+
+    tokio::spawn(async move {
+        // Create progress channel for transcription
+        let (transcribe_tx, mut transcribe_rx) = mpsc::channel::<TranscribeProgress>(100);
+
+        let app_for_transcribe = app_clone.clone();
+        let task_id_for_progress = task_id_clone.clone();
+        let state_for_progress = state_clone.clone();
+
+        // Spawn task to forward transcription progress
+        tokio::spawn(async move {
+            while let Some(progress) = transcribe_rx.recv().await {
+                // Skip the "complete" stage - we handle completion in the main flow
+                if progress.stage == "complete" {
+                    continue;
+                }
+                let mut downloads = state_for_progress.downloads.lock().await;
+                if let Some(download) = downloads.get_mut(&task_id_for_progress) {
+                    // Don't overwrite if already completed
+                    if download.status == "completed" {
+                        continue;
+                    }
+                    download.status = format!("transcribing:{}", progress.stage);
+                    download.transcription_progress = Some(progress.progress);
+                    download.transcription_message = Some(progress.message.clone());
+                    let _ = app_for_transcribe.emit("transcribe-progress", &progress);
+                    let _ = app_for_transcribe.emit("download-progress", download.clone());
+                }
+            }
+        });
+
+        let transcription_manager = TranscriptionManager::new();
+
+        log::info!(
+            "Starting local file transcription for: {:?} with engine: {}, model: {}",
+            video_path,
+            engine_id,
+            model_id
+        );
+
+        match transcription_manager
+            .process_video(
+                &video_path,
+                &engine_id,
+                &model_id,
+                None, // Language is auto-detected
+                &style,
+                transcribe_tx,
+                cancel_rx,
+            )
+            .await
+        {
+            Ok(result) => {
+                log::info!("Local file transcription successful: {:?}", result);
+                let mut downloads = state_clone.downloads.lock().await;
+                if let Some(download) = downloads.get_mut(&task_id_clone) {
+                    download.status = "completed".to_string();
+                    download.progress = 100.0;
+                    let _ = app_clone.emit("download-progress", download.clone());
+                }
+            }
+            Err(e) => {
+                log::error!("Local file transcription failed: {}", e);
+                let mut downloads = state_clone.downloads.lock().await;
+                if let Some(download) = downloads.get_mut(&task_id_clone) {
+                    // Only set error status if not already cancelled
+                    if download.status != "cancelled" {
+                        download.status = "error".to_string();
+                        download.error = Some(e);
+                    }
+                    let _ = app_clone.emit("download-progress", download.clone());
+                }
+            }
+        }
+
+        // Clean up cancel sender
+        state_clone.cancel_senders.lock().await.remove(&task_id_clone);
+    });
+
+    Ok(())
+}
+
+/// Update transcription settings for a pending task
+#[tauri::command]
+pub async fn update_transcription_settings(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    task_id: String,
+    engine: Option<String>,
+    model: Option<String>,
+    style: Option<String>,
+) -> Result<(), String> {
+    let mut downloads = state.downloads.lock().await;
+    let download = downloads.get_mut(&task_id)
+        .ok_or_else(|| format!("Task not found: {}", task_id))?;
+
+    if download.status != "pending" {
+        return Err("Can only update settings for pending tasks".to_string());
+    }
+
+    if let Some(e) = engine {
+        download.transcription_engine = Some(e);
+    }
+    if let Some(m) = model {
+        download.whisper_model = Some(m);
+    }
+    // Note: style is not currently stored in Download struct,
+    // could add it in a future enhancement
+
+    let _ = style; // Acknowledge unused for now
+
+    let _ = app.emit("download-progress", download.clone());
+
+    Ok(())
 }
 
 // Network interface commands

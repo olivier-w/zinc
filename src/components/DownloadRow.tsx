@@ -1,10 +1,11 @@
-import { memo, useCallback, useState, useMemo } from 'react';
+import { memo, useCallback, useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { Download } from '@/lib/types';
+import type { Download, TranscriptionEngine } from '@/lib/types';
 import { cn, truncate } from '@/lib/utils';
 import { getSpeedMultiplier } from '@/lib/constants';
+import { getTranscriptionEngines } from '@/lib/tauri';
 import { ProgressRing } from './ProgressRing';
-import { XIcon, FolderIcon, PlayIcon, TrashIcon, ChevronDownIcon } from './Icons';
+import { XIcon, FolderIcon, PlayIcon, TrashIcon, ChevronDownIcon, SubtitlesIcon } from './Icons';
 
 const TRANSCRIBE_STAGE_MESSAGES: Record<string, string> = {
   extracting: 'Extracting audio...',
@@ -22,6 +23,9 @@ function formatErrorMessage(error: string): string {
   ) {
     return 'Lost internet connection';
   }
+  if (error === 'Cancelled') {
+    return 'Cancelled';
+  }
   return error;
 }
 
@@ -31,6 +35,8 @@ interface DownloadRowProps {
   onClear: (id: string) => void;
   onOpenFile: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onStartLocalTranscription?: (taskId: string) => void;
+  onUpdateTranscriptionSettings?: (taskId: string, settings: { engine?: string; model?: string }) => void;
 }
 
 export const DownloadRow = memo(function DownloadRow({
@@ -39,13 +45,67 @@ export const DownloadRow = memo(function DownloadRow({
   onClear,
   onOpenFile,
   onOpenFolder,
+  onStartLocalTranscription,
+  onUpdateTranscriptionSettings,
 }: DownloadRowProps) {
-  const isDownloading = download.status === 'downloading' || download.status === 'pending';
+  const isPendingLocalTranscribe = download.task_type === 'local_transcribe' && download.status === 'pending';
+  const isDownloading = download.task_type === 'download' && (download.status === 'downloading' || download.status === 'pending');
   const isTranscribing = download.status === 'transcribing' || download.status.startsWith('transcribing:');
   const isActive = isDownloading || isTranscribing;
 
-  // Start expanded for active downloads
-  const [isExpanded, setIsExpanded] = useState(isActive);
+  // Start expanded for active downloads and pending local transcriptions
+  const [isExpanded, setIsExpanded] = useState(isActive || isPendingLocalTranscribe);
+
+  // Engines for local transcription settings
+  const [engines, setEngines] = useState<TranscriptionEngine[]>([]);
+  const [selectedEngine, setSelectedEngine] = useState(download.transcription_engine || 'whisper_rs');
+  const [selectedModel, setSelectedModel] = useState(download.whisper_model || 'base');
+
+  // Fetch engines when component mounts (only for pending local transcriptions)
+  useEffect(() => {
+    if (isPendingLocalTranscribe) {
+      getTranscriptionEngines().then((fetchedEngines) => {
+        setEngines(fetchedEngines);
+
+        // Find engines with installed models
+        const enginesWithModels = fetchedEngines.filter(e => e.models.some(m => m.installed));
+        if (enginesWithModels.length === 0) return;
+
+        // Check if current engine has installed models
+        const currentEng = fetchedEngines.find(e => e.id === selectedEngine);
+        const currentHasModels = currentEng?.models.some(m => m.installed);
+
+        if (!currentHasModels) {
+          // Switch to first available engine
+          const firstAvailable = enginesWithModels[0];
+          setSelectedEngine(firstAvailable.id);
+          const firstModel = firstAvailable.models.find(m => m.installed);
+          if (firstModel) setSelectedModel(firstModel.id);
+        } else {
+          // Check if current model is installed
+          const modelInstalled = currentEng?.models.find(m => m.id === selectedModel && m.installed);
+          if (!modelInstalled) {
+            const firstInstalled = currentEng?.models.find(m => m.installed);
+            if (firstInstalled) setSelectedModel(firstInstalled.id);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [isPendingLocalTranscribe, selectedEngine, selectedModel]);
+
+  // Get engines that have at least one installed model
+  const availableEngines = useMemo(() => {
+    return engines.filter(e => e.models.some(m => m.installed));
+  }, [engines]);
+
+  // Get current engine and its installed models
+  const currentEngine = useMemo(() => {
+    return engines.find(e => e.id === selectedEngine);
+  }, [engines, selectedEngine]);
+
+  const installedModels = useMemo(() => {
+    return currentEngine?.models.filter(m => m.installed) || [];
+  }, [currentEngine]);
 
   const handleCancel = useCallback(() => onCancel(download.id), [onCancel, download.id]);
   const handleClear = useCallback(() => onClear(download.id), [onClear, download.id]);
@@ -56,19 +116,35 @@ export const DownloadRow = memo(function DownloadRow({
     if (download.output_path) onOpenFolder(download.output_path);
   }, [onOpenFolder, download.output_path]);
 
+  const handleStartTranscription = useCallback(() => {
+    // Update settings before starting if they changed
+    if (onUpdateTranscriptionSettings && (selectedEngine !== download.transcription_engine || selectedModel !== download.whisper_model)) {
+      onUpdateTranscriptionSettings(download.id, { engine: selectedEngine, model: selectedModel });
+    }
+    onStartLocalTranscription?.(download.id);
+  }, [download.id, selectedEngine, selectedModel, download.transcription_engine, download.whisper_model, onUpdateTranscriptionSettings, onStartLocalTranscription]);
+
+  const handleEngineChange = useCallback((newEngine: string) => {
+    setSelectedEngine(newEngine);
+    const eng = engines.find(e => e.id === newEngine);
+    const firstModel = eng?.models.find(m => m.installed);
+    if (firstModel) setSelectedModel(firstModel.id);
+  }, [engines]);
+
   const isCompleted = download.status === 'completed';
   const isError = download.status === 'error';
   const isCancelled = download.status === 'cancelled';
 
   // Determine progress ring status
   const ringStatus = useMemo(() => {
+    if (isPendingLocalTranscribe) return 'pending';
     if (isDownloading) return 'downloading';
     if (isTranscribing) return 'transcribing';
     if (isCompleted) return 'completed';
     if (isError) return 'error';
     if (isCancelled) return 'cancelled';
     return 'pending';
-  }, [isDownloading, isTranscribing, isCompleted, isError, isCancelled]);
+  }, [isPendingLocalTranscribe, isDownloading, isTranscribing, isCompleted, isError, isCancelled]);
 
   // Get progress value
   const progressValue = useMemo(() => {
@@ -99,6 +175,7 @@ export const DownloadRow = memo(function DownloadRow({
 
   // Status text for collapsed view
   const statusText = useMemo(() => {
+    if (isPendingLocalTranscribe) return 'Ready';
     if (isDownloading) return download.speed || `${download.progress.toFixed(0)}%`;
     if (isTranscribing) {
       const msg = download.transcription_message || transcribeStage;
@@ -108,7 +185,7 @@ export const DownloadRow = memo(function DownloadRow({
     if (isError) return 'Error';
     if (isCancelled) return 'Cancelled';
     return '';
-  }, [isDownloading, isTranscribing, isCompleted, isError, isCancelled, download.speed, download.progress, download.transcription_message, transcribeStage]);
+  }, [isPendingLocalTranscribe, isDownloading, isTranscribing, isCompleted, isError, isCancelled, download.speed, download.progress, download.transcription_message, transcribeStage]);
 
   return (
     <motion.div
@@ -125,8 +202,8 @@ export const DownloadRow = memo(function DownloadRow({
         isCompleted && 'border-success/20',
         isError && 'border-error/20',
         isCancelled && 'border-border opacity-60',
-        isActive && 'border-accent/20',
-        !isCompleted && !isError && !isCancelled && !isActive && 'border-border/50'
+        (isActive || isPendingLocalTranscribe) && 'border-accent/20',
+        !isCompleted && !isError && !isCancelled && !isActive && !isPendingLocalTranscribe && 'border-border/50'
       )}
     >
       {/* Collapsed row - always visible */}
@@ -134,12 +211,18 @@ export const DownloadRow = memo(function DownloadRow({
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors text-left"
       >
-        {/* Progress ring */}
-        <ProgressRing
-          status={ringStatus}
-          progress={progressValue}
-          size={24}
-        />
+        {/* Progress ring or subtitle icon for local transcribe */}
+        {download.task_type === 'local_transcribe' && !isTranscribing && !isCompleted && !isError ? (
+          <div className="w-6 h-6 flex items-center justify-center">
+            <SubtitlesIcon className="w-5 h-5 text-accent" />
+          </div>
+        ) : (
+          <ProgressRing
+            status={ringStatus}
+            progress={progressValue}
+            size={24}
+          />
+        )}
 
         {/* Title - truncated */}
         <span className="flex-1 text-sm text-text-primary truncate min-w-0">
@@ -149,7 +232,7 @@ export const DownloadRow = memo(function DownloadRow({
         {/* Status/Speed */}
         <span className={cn(
           'text-xs tabular-nums shrink-0',
-          isActive && 'text-accent',
+          (isActive || isPendingLocalTranscribe) && 'text-accent',
           isCompleted && 'text-success',
           isError && 'text-error',
           isCancelled && 'text-text-tertiary'
@@ -171,19 +254,19 @@ export const DownloadRow = memo(function DownloadRow({
               <PlayIcon className="w-4 h-4" />
             </button>
           )}
-          {isDownloading && (
+          {(isDownloading || isTranscribing) && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleCancel();
               }}
               className="p-1.5 rounded-md hover:bg-error/20 text-text-secondary hover:text-error transition-colors"
-              aria-label="Cancel download"
+              aria-label="Cancel"
             >
               <XIcon className="w-4 h-4" />
             </button>
           )}
-          {!isActive && (
+          {!isActive && !isPendingLocalTranscribe && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -212,80 +295,158 @@ export const DownloadRow = memo(function DownloadRow({
             transition={{ type: 'spring', stiffness: 400, damping: 35 }}
             className="overflow-hidden"
           >
-            <div className="px-3 pb-3 pt-1 flex gap-3 border-t border-border/30">
-              {/* Thumbnail */}
-              {download.thumbnail && (
-                <div className="w-16 h-9 shrink-0 rounded overflow-hidden bg-bg-tertiary">
-                  <img
-                    src={download.thumbnail}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+            <div className="px-3 pb-3 pt-1 flex flex-col gap-3 border-t border-border/30">
+              {/* Row with thumbnail and details */}
+              <div className="flex gap-3">
+                {/* Thumbnail */}
+                {download.thumbnail && (
+                  <div className="w-16 h-9 shrink-0 rounded overflow-hidden bg-bg-tertiary">
+                    <img
+                      src={download.thumbnail}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  {/* Full title */}
+                  <p className="text-sm text-text-primary line-clamp-2 leading-snug mb-1">
+                    {download.title}
+                  </p>
+
+                  {/* Source path for local transcription */}
+                  {download.task_type === 'local_transcribe' && download.source_path && (
+                    <p className="text-xs text-text-tertiary truncate" title={download.source_path}>
+                      {download.source_path}
+                    </p>
+                  )}
+
+                  {/* Progress info */}
+                  {isDownloading && (
+                    <p className="text-xs text-text-secondary">
+                      <span className="text-accent font-medium">{download.progress.toFixed(1)}%</span>
+                      {download.speed && <span className="ml-2">{download.speed}</span>}
+                      {download.eta && <span className="ml-2 text-text-tertiary">ETA {download.eta}</span>}
+                    </p>
+                  )}
+
+                  {/* Transcription info */}
+                  {isTranscribing && (
+                    <p className="text-xs text-text-secondary">
+                      <span className="text-accent">{download.transcription_message || transcribeStage}</span>
+                      {download.transcription_progress != null && download.transcription_progress > 0 && (
+                        <span className="ml-2 font-medium">{download.transcription_progress.toFixed(0)}%</span>
+                      )}
+                      {transcriptionEta && download.transcription_progress != null && download.transcription_progress < 10 && (
+                        <span className="ml-2 text-text-tertiary">ETA {transcriptionEta}</span>
+                      )}
+                    </p>
+                  )}
+
+                  {/* Completed info */}
+                  {isCompleted && (
+                    <p className="text-xs text-text-tertiary">
+                      {download.task_type === 'local_transcribe' ? 'Subtitles added' : download.format.toUpperCase()}
+                      {download.error && (
+                        <span className="ml-2 text-warning">{download.error}</span>
+                      )}
+                    </p>
+                  )}
+
+                  {/* Error message */}
+                  {isError && download.error && (
+                    <p className="text-xs text-error">{formatErrorMessage(download.error)}</p>
+                  )}
+
+                  {/* Cancelled */}
+                  {isCancelled && (
+                    <p className="text-xs text-text-tertiary">
+                      {download.task_type === 'local_transcribe' ? 'Transcription cancelled' : 'Download cancelled'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Expanded actions */}
+                <div className="shrink-0 flex flex-col gap-1">
+                  {isCompleted && download.output_path && (
+                    <button
+                      onClick={handleOpenFolder}
+                      className="p-1.5 rounded-md hover:bg-white/10 text-text-secondary hover:text-text-primary transition-colors"
+                      aria-label="Open folder"
+                    >
+                      <FolderIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Engine/Model selectors and Start button for pending local transcription */}
+              {isPendingLocalTranscribe && availableEngines.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Engine selector */}
+                  {availableEngines.length > 1 && (
+                    <select
+                      value={selectedEngine}
+                      onChange={(e) => handleEngineChange(e.target.value)}
+                      className="pill-glass px-3 py-1.5 text-sm rounded-lg bg-transparent border-none cursor-pointer"
+                    >
+                      {availableEngines.map((engine) => (
+                        <option key={engine.id} value={engine.id} className="bg-bg-secondary">
+                          {engine.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Model selector */}
+                  {installedModels.length > 1 && (
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="pill-glass px-3 py-1.5 text-sm rounded-lg bg-transparent border-none cursor-pointer"
+                    >
+                      {installedModels.map((model) => (
+                        <option key={model.id} value={model.id} className="bg-bg-secondary">
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <div className="flex-1" />
+
+                  {/* Remove button */}
+                  <button
+                    onClick={handleClear}
+                    className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-error hover:bg-error/10 transition-colors"
+                  >
+                    Remove
+                  </button>
+
+                  {/* Start button */}
+                  <button
+                    onClick={handleStartTranscription}
+                    className="px-4 py-1.5 text-sm rounded-lg btn-gradient text-white font-medium"
+                  >
+                    Start
+                  </button>
                 </div>
               )}
 
-              {/* Details */}
-              <div className="flex-1 min-w-0">
-                {/* Full title */}
-                <p className="text-sm text-text-primary line-clamp-2 leading-snug mb-1">
-                  {download.title}
-                </p>
-
-                {/* Progress info */}
-                {isDownloading && (
-                  <p className="text-xs text-text-secondary">
-                    <span className="text-accent font-medium">{download.progress.toFixed(1)}%</span>
-                    {download.speed && <span className="ml-2">{download.speed}</span>}
-                    {download.eta && <span className="ml-2 text-text-tertiary">ETA {download.eta}</span>}
-                  </p>
-                )}
-
-                {/* Transcription info */}
-                {isTranscribing && (
-                  <p className="text-xs text-text-secondary">
-                    <span className="text-accent">{download.transcription_message || transcribeStage}</span>
-                    {download.transcription_progress != null && download.transcription_progress > 0 && (
-                      <span className="ml-2 font-medium">{download.transcription_progress.toFixed(0)}%</span>
-                    )}
-                    {transcriptionEta && download.transcription_progress != null && download.transcription_progress < 10 && (
-                      <span className="ml-2 text-text-tertiary">ETA {transcriptionEta}</span>
-                    )}
-                  </p>
-                )}
-
-                {/* Completed info */}
-                {isCompleted && (
-                  <p className="text-xs text-text-tertiary">
-                    {download.format.toUpperCase()}
-                    {download.error && (
-                      <span className="ml-2 text-warning">{download.error}</span>
-                    )}
-                  </p>
-                )}
-
-                {/* Error message */}
-                {isError && download.error && (
-                  <p className="text-xs text-error">{formatErrorMessage(download.error)}</p>
-                )}
-
-                {/* Cancelled */}
-                {isCancelled && (
-                  <p className="text-xs text-text-tertiary">Download cancelled</p>
-                )}
-              </div>
-
-              {/* Expanded actions */}
-              <div className="shrink-0 flex flex-col gap-1">
-                {isCompleted && download.output_path && (
+              {/* Warning if no models installed */}
+              {isPendingLocalTranscribe && availableEngines.length === 0 && engines.length > 0 && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-warning">No transcription models installed. Install models in Settings.</p>
                   <button
-                    onClick={handleOpenFolder}
-                    className="p-1.5 rounded-md hover:bg-white/10 text-text-secondary hover:text-text-primary transition-colors"
-                    aria-label="Open folder"
+                    onClick={handleClear}
+                    className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-error hover:bg-error/10 transition-colors"
                   >
-                    <FolderIcon className="w-4 h-4" />
+                    Remove
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

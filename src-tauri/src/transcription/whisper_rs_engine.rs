@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// Duration threshold for chunked transcription (5 minutes)
@@ -200,6 +200,7 @@ impl WhisperRsEngine {
         style: &str,
         duration: f64,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
         let _ = progress_tx
             .send(TranscribeProgress {
@@ -242,6 +243,13 @@ impl WhisperRsEngine {
 
         // Process each chunk
         for chunk_idx in 0..num_chunks {
+            // Check for cancellation at the start of each chunk
+            if *cancel_rx.borrow() {
+                // Clean up temp directory
+                let _ = fs::remove_dir_all(&temp_dir).await;
+                return Err("Cancelled".to_string());
+            }
+
             let chunk_start = chunk_idx as f64 * effective_chunk_duration;
             let chunk_duration = if chunk_idx == num_chunks - 1 {
                 // Last chunk: extend to end of audio
@@ -650,7 +658,13 @@ impl TranscriptionEngine for WhisperRsEngine {
         language: Option<&str>,
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
+        // Check for cancellation
+        if *cancel_rx.borrow() {
+            return Err("Cancelled".to_string());
+        }
+
         // Check audio duration first to decide on chunked vs single-shot transcription
         let duration = get_audio_duration(audio_path).await.unwrap_or(60.0);
 
@@ -662,7 +676,7 @@ impl TranscriptionEngine for WhisperRsEngine {
                 CHUNK_DURATION_SECS
             );
             return self
-                .transcribe_chunked(audio_path, model, language, style, duration, progress_tx)
+                .transcribe_chunked(audio_path, model, language, style, duration, progress_tx, cancel_rx)
                 .await;
         }
 

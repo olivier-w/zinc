@@ -177,7 +177,7 @@ export function onTranscriptionInstallProgress(
   });
 }
 
-// Local file transcription functions
+// Local file transcription functions (unified with downloads system)
 
 export async function selectVideoFile(): Promise<string | null> {
   const selected = await open({
@@ -193,13 +193,27 @@ export async function selectVideoFile(): Promise<string | null> {
   return selected as string | null;
 }
 
-export async function transcribeLocalFile(
+export async function addLocalTranscription(
   filePath: string,
-  engineId: string,
-  modelId: string,
+  title: string,
+  engine: string,
+  model: string,
   style: string
+): Promise<string> {
+  return invoke<string>('add_local_transcription', { filePath, title, engine, model, style });
+}
+
+export async function startLocalTranscription(taskId: string): Promise<void> {
+  return invoke('start_local_transcription', { taskId });
+}
+
+export async function updateTranscriptionSettings(
+  taskId: string,
+  engine?: string,
+  model?: string,
+  style?: string
 ): Promise<void> {
-  return invoke<void>('transcribe_local_file', { filePath, engineId, modelId, style });
+  return invoke('update_transcription_settings', { taskId, engine, model, style });
 }
 
 // Network interface functions

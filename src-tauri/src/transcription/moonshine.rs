@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::fs;
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Model download URLs from sherpa-onnx releases
 const MOONSHINE_TINY_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-int8.tar.bz2";
@@ -185,7 +185,12 @@ impl TranscriptionEngine for MoonshineEngine {
         _language: Option<&str>,
         _style: &str,  // Moonshine doesn't support word-level timing, always uses sentence mode
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
+        // Check for cancellation
+        if *cancel_rx.borrow() {
+            return Err("Cancelled".to_string());
+        }
         let _ = progress_tx
             .send(TranscribeProgress {
                 stage: "preparing".to_string(),

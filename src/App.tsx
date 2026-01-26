@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, lazy, Suspense, useMemo } from 'react
 import { AnimatePresence, motion } from 'motion/react';
 import { URLInput } from './components/URLInput';
 import { VideoCard } from './components/VideoCard';
-import { LocalTranscribeCard } from './components/LocalTranscribeCard';
 import { DownloadsSection } from './components/DownloadsSection';
 import { ToastContainer } from './components/Toast';
 import { ProgressBar } from './components/ProgressBar';
@@ -10,9 +9,9 @@ import { SettingsIcon, AlertCircleIcon, DownloadIcon, LoaderIcon } from './compo
 import { useDownload } from './hooks/useDownload';
 import { useSettings } from './hooks/useSettings';
 import { useToast } from './hooks/useToast';
-import { getVideoInfo, getYtdlpStatus, getYtdlpStatusFast, installYtdlp, onYtdlpInstallProgress, onTranscribeProgress } from './lib/tauri';
+import { getVideoInfo, getYtdlpStatus, getYtdlpStatusFast, installYtdlp, onYtdlpInstallProgress } from './lib/tauri';
 // Dark theme is now the only theme - no light mode support
-import type { VideoInfo, YtDlpStatus, YtDlpInstallProgress, SubtitleSettings, TranscribeProgress } from './lib/types';
+import type { VideoInfo, YtDlpStatus, YtDlpInstallProgress, SubtitleSettings } from './lib/types';
 
 const Settings = lazy(() =>
   import('./components/Settings').then(m => ({ default: m.Settings }))
@@ -29,10 +28,6 @@ function App() {
   const [installProgress, setInstallProgress] = useState<YtDlpInstallProgress | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
 
-  // Local file transcription state
-  const [localFilePath, setLocalFilePath] = useState<string | null>(null);
-  const [localTranscribeProgress, setLocalTranscribeProgress] = useState<TranscribeProgress | null>(null);
-
   const {
     downloads,
     hasCompletedDownloads,
@@ -40,6 +35,9 @@ function App() {
     cancelDownload,
     clearDownload,
     clearCompleted,
+    addLocalTranscription,
+    startLocalTranscription,
+    updateTranscriptionSettings,
   } = useDownload();
 
   const { config, saveConfig } = useSettings();
@@ -74,24 +72,6 @@ function App() {
       unlisten?.();
     };
   }, []);
-
-  // Listen for local transcription progress
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-
-    onTranscribeProgress((progress) => {
-      // Only update if we have a local file being transcribed
-      if (localFilePath) {
-        setLocalTranscribeProgress(progress);
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
-
-    return () => {
-      unlisten?.();
-    };
-  }, [localFilePath]);
 
   const handleInstallYtdlp = useCallback(async () => {
     setIsInstalling(true);
@@ -184,20 +164,19 @@ function App() {
     setVideoInfo(null);
   }, []);
 
-  const handleLocalFile = useCallback((filePath: string) => {
-    setLocalFilePath(filePath);
-    setLocalTranscribeProgress(null);
+  const handleLocalFile = useCallback(async (filePath: string) => {
     setVideoInfo(null); // Close any open video preview
-  }, []);
-
-  const handleCloseLocalTranscribe = useCallback(() => {
-    setLocalFilePath(null);
-    setLocalTranscribeProgress(null);
-  }, []);
-
-  const handleStartLocalTranscription = useCallback(() => {
-    setLocalTranscribeProgress(null);
-  }, []);
+    try {
+      await addLocalTranscription(
+        filePath,
+        config?.transcription_engine ?? 'whisper_rs',
+        config?.transcription_model ?? 'base',
+        'sentence'  // Default style
+      );
+    } catch (err) {
+      error(err instanceof Error ? err.message : 'Failed to add transcription task');
+    }
+  }, [addLocalTranscription, config, error]);
 
   const handleCardExitComplete = useCallback(() => {
     // Card has finished fading out, now allow URL input to move
@@ -219,13 +198,13 @@ function App() {
 
   // Derive layout state
   const layoutState: LayoutState = useMemo(() => {
-    if (videoInfo || isLoadingInfo || localFilePath) return 'preview';
+    if (videoInfo || isLoadingInfo) return 'preview';
     if (downloads.length > 0) return 'active';
     return 'empty';
-  }, [videoInfo, isLoadingInfo, localFilePath, downloads.length]);
+  }, [videoInfo, isLoadingInfo, downloads.length]);
 
   // URL input should stay at top until exit animations complete
-  const urlInputAtTop = videoInfo || isLoadingInfo || localFilePath || !cardExitComplete || downloads.length > 0 || !downloadsExitComplete;
+  const urlInputAtTop = videoInfo || isLoadingInfo || !cardExitComplete || downloads.length > 0 || !downloadsExitComplete;
 
   return (
     <div className="h-screen bg-bg-primary flex flex-col overflow-hidden">
@@ -364,38 +343,7 @@ function App() {
             )}
           </AnimatePresence>
 
-          {/* Local Transcribe Card */}
-          <AnimatePresence onExitComplete={handleCardExitComplete}>
-            {localFilePath && (
-              <motion.div
-                className="w-full flex justify-center"
-                initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  scale: 1,
-                  transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] }
-                }}
-                exit={{
-                  opacity: 0,
-                  scale: 0.95,
-                  transition: { duration: 0.3, ease: [0.4, 0, 0.6, 1] }
-                }}
-              >
-                <LocalTranscribeCard
-                  key={localFilePath}
-                  filePath={localFilePath}
-                  onClose={handleCloseLocalTranscribe}
-                  transcriptionEngine={config?.transcription_engine ?? 'whisper_rs'}
-                  transcriptionModel={config?.transcription_model ?? 'base'}
-                  progress={localTranscribeProgress}
-                  onStartTranscription={handleStartLocalTranscription}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Downloads Section - inline, replaces fixed tray */}
+          {/* Downloads Section - inline, includes local transcriptions */}
           <AnimatePresence onExitComplete={handleDownloadsExitComplete}>
             {downloads.length > 0 && showDownloadsDelayed && (
               <DownloadsSection
@@ -404,6 +352,8 @@ function App() {
                 onClear={clearDownload}
                 onClearCompleted={clearCompleted}
                 hasCompletedDownloads={hasCompletedDownloads}
+                onStartLocalTranscription={startLocalTranscription}
+                onUpdateTranscriptionSettings={updateTranscriptionSettings}
               />
             )}
           </AnimatePresence>

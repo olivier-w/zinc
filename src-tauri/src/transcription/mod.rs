@@ -8,7 +8,7 @@ pub use whisper_rs_engine::WhisperRsEngine;
 
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Dispatcher for transcription engines
 pub struct TranscriptionDispatcher {
@@ -55,11 +55,12 @@ impl TranscriptionDispatcher {
         language: Option<&str>,
         style: &str,
         progress_tx: mpsc::Sender<TranscribeProgress>,
+        cancel_rx: watch::Receiver<bool>,
     ) -> Result<std::path::PathBuf, String> {
         let engine = self.get_engine(engine_id)
             .ok_or_else(|| format!("Engine '{}' not found", engine_id))?;
 
-        engine.transcribe(audio_path, model, language, style, progress_tx).await
+        engine.transcribe(audio_path, model, language, style, progress_tx, cancel_rx).await
     }
 }
 
