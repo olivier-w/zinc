@@ -334,7 +334,7 @@ impl TranscriptionManager {
 
         // Step 2: Embed subtitles
         log::info!("Starting subtitle embedding...");
-        Self::embed_subtitles(video_path, &srt_path, &output_path, &progress_tx, &cancel_rx).await?;
+        Self::embed_subtitles(video_path, &srt_path, &output_path, language, &progress_tx, &cancel_rx).await?;
         log::info!(
             "Embedding complete, output exists: {}",
             output_path.exists()
@@ -377,11 +377,58 @@ impl TranscriptionManager {
         Ok(video_path.to_path_buf())
     }
 
+    /// Convert ISO 639-1 language code to ISO 639-2 (3-letter) code and full name
+    fn get_language_metadata(language: Option<&str>) -> (&'static str, &'static str) {
+        match language {
+            Some("en") | Some("auto") | None => ("eng", "English"),
+            Some("es") => ("spa", "Spanish"),
+            Some("fr") => ("fra", "French"),
+            Some("de") => ("deu", "German"),
+            Some("it") => ("ita", "Italian"),
+            Some("pt") => ("por", "Portuguese"),
+            Some("ru") => ("rus", "Russian"),
+            Some("zh") => ("zho", "Chinese"),
+            Some("ja") => ("jpn", "Japanese"),
+            Some("ko") => ("kor", "Korean"),
+            Some("ar") => ("ara", "Arabic"),
+            Some("hi") => ("hin", "Hindi"),
+            Some("nl") => ("nld", "Dutch"),
+            Some("pl") => ("pol", "Polish"),
+            Some("tr") => ("tur", "Turkish"),
+            Some("vi") => ("vie", "Vietnamese"),
+            Some("th") => ("tha", "Thai"),
+            Some("id") => ("ind", "Indonesian"),
+            Some("uk") => ("ukr", "Ukrainian"),
+            Some("cs") => ("ces", "Czech"),
+            Some("sv") => ("swe", "Swedish"),
+            Some("da") => ("dan", "Danish"),
+            Some("fi") => ("fin", "Finnish"),
+            Some("no") => ("nor", "Norwegian"),
+            Some("he") => ("heb", "Hebrew"),
+            Some("el") => ("ell", "Greek"),
+            Some("hu") => ("hun", "Hungarian"),
+            Some("ro") => ("ron", "Romanian"),
+            Some("sk") => ("slk", "Slovak"),
+            Some("bg") => ("bul", "Bulgarian"),
+            Some("hr") => ("hrv", "Croatian"),
+            Some("sr") => ("srp", "Serbian"),
+            Some("sl") => ("slv", "Slovenian"),
+            Some("et") => ("est", "Estonian"),
+            Some("lv") => ("lav", "Latvian"),
+            Some("lt") => ("lit", "Lithuanian"),
+            Some("ms") => ("msa", "Malay"),
+            Some("tl") => ("tgl", "Tagalog"),
+            // Default to English for unrecognized codes
+            Some(_) => ("eng", "English"),
+        }
+    }
+
     /// Embed SRT subtitles into video file
     async fn embed_subtitles(
         video_path: &Path,
         srt_path: &Path,
         output_path: &Path,
+        language: Option<&str>,
         progress_tx: &mpsc::Sender<TranscribeProgress>,
         cancel_rx: &watch::Receiver<bool>,
     ) -> Result<PathBuf, String> {
@@ -421,40 +468,59 @@ impl TranscriptionManager {
             _ => ("mov_text", false),
         };
 
+        // Get language metadata for the new subtitle stream
+        let (lang_code, lang_title) = Self::get_language_metadata(language);
+
         let mut cmd = Command::new(if cfg!(target_os = "windows") {
             "ffmpeg.exe"
         } else {
             "ffmpeg"
         });
 
+        // Build the metadata argument for the new subtitle stream
+        let lang_metadata = format!("language={}", lang_code);
+        let title_metadata = format!("title={}", lang_title);
+
         if needs_conversion {
             // WebM: map video, audio, existing subs from input 0, then new sub from input 1
             // All subtitles need to be webvtt for WebM container
+            // Map streams explicitly: video, audio, then new subtitle first (so it's s:0), then existing subs
             cmd.args([
                 "-i",
                 video_path.to_str().unwrap_or(""),
                 "-i",
                 srt_path.to_str().unwrap_or(""),
-                "-map", "0",           // All streams from original video (preserves existing subtitles)
-                "-map", "1",           // New subtitle from SRT file
+                "-map", "0:v?",        // Video from original (optional - may not exist)
+                "-map", "0:a?",        // Audio from original (optional - may not exist)
+                "-map", "1:s",         // New subtitle FIRST (becomes s:0)
+                "-map", "0:s?",        // Existing subtitles after (optional)
                 "-c:v", "copy",
                 "-c:a", "copy",
                 "-c:s", subtitle_codec, // All subtitles to webvtt (required for WebM)
+                // Metadata for the new subtitle stream (now at index s:0)
+                "-metadata:s:s:0", &lang_metadata,
+                "-metadata:s:s:0", &title_metadata,
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);
         } else {
             // MKV/MP4: map all streams and add new subtitle
             // Existing subs can be copied, new SRT needs encoding to container format
+            // Map streams explicitly: video, audio, then new subtitle first (so it's s:0), then existing subs
             cmd.args([
                 "-i",
                 video_path.to_str().unwrap_or(""),
                 "-i",
                 srt_path.to_str().unwrap_or(""),
-                "-map", "0",           // All streams from original video (preserves existing subtitles)
-                "-map", "1",           // New subtitle from SRT file
+                "-map", "0:v?",        // Video from original (optional)
+                "-map", "0:a?",        // Audio from original (optional)
+                "-map", "1:s",         // New subtitle FIRST (becomes s:0)
+                "-map", "0:s?",        // Existing subtitles after (optional)
                 "-c", "copy",          // Copy all streams by default
                 "-c:s", subtitle_codec, // Encode all subtitles to container format
+                // Metadata for the new subtitle stream (now at index s:0)
+                "-metadata:s:s:0", &lang_metadata,
+                "-metadata:s:s:0", &title_metadata,
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);
