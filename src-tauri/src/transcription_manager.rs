@@ -376,34 +376,33 @@ impl TranscriptionManager {
         });
 
         if needs_conversion {
+            // WebM: map video, audio, existing subs from input 0, then new sub from input 1
+            // All subtitles need to be webvtt for WebM container
             cmd.args([
                 "-i",
                 video_path.to_str().unwrap_or(""),
                 "-i",
                 srt_path.to_str().unwrap_or(""),
-                "-c:v",
-                "copy",
-                "-c:a",
-                "copy",
-                "-c:s",
-                subtitle_codec,
-                "-metadata:s:s:0",
-                "language=eng",
+                "-map", "0",           // All streams from original video (preserves existing subtitles)
+                "-map", "1",           // New subtitle from SRT file
+                "-c:v", "copy",
+                "-c:a", "copy",
+                "-c:s", subtitle_codec, // All subtitles to webvtt (required for WebM)
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);
         } else {
+            // MKV/MP4: map all streams and add new subtitle
+            // Existing subs can be copied, new SRT needs encoding to container format
             cmd.args([
                 "-i",
                 video_path.to_str().unwrap_or(""),
                 "-i",
                 srt_path.to_str().unwrap_or(""),
-                "-c",
-                "copy",
-                "-c:s",
-                subtitle_codec,
-                "-metadata:s:s:0",
-                "language=eng",
+                "-map", "0",           // All streams from original video (preserves existing subtitles)
+                "-map", "1",           // New subtitle from SRT file
+                "-c", "copy",          // Copy all streams by default
+                "-c:s", subtitle_codec, // Encode all subtitles to container format
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);

@@ -383,6 +383,7 @@ function App() {
                 }}
               >
                 <LocalTranscribeCard
+                  key={localFilePath}
                   filePath={localFilePath}
                   onClose={handleCloseLocalTranscribe}
                   transcriptionEngine={config?.transcription_engine ?? 'whisper_rs'}
