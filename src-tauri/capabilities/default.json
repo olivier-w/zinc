@@ -11,6 +11,7 @@
     "dialog:allow-ask",
     "core:event:default",
     "core:event:allow-emit",
-    "core:event:allow-listen"
+    "core:event:allow-listen",
+    "core:window:allow-set-progress-bar"
   ]
 }
