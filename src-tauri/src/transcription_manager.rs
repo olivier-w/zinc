@@ -674,10 +674,7 @@ impl TranscriptionManager {
                                     .send(TranscribeProgress {
                                         stage: "embedding".to_string(),
                                         progress: pct,
-                                        message: format!(
-                                            "Embedding subtitles... {:.0}%",
-                                            pct
-                                        ),
+                                        message: "Embedding subtitles...".to_string(),
                                     })
                                     .await;
                             }
