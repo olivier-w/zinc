@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Download, TranscriptionEngine } from '@/lib/types';
-import { cn, truncate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { getSpeedMultiplier } from '@/lib/constants';
 import { getTranscriptionEngines } from '@/lib/tauri';
 import { XIcon, FolderIcon, PlayIcon, TrashIcon, ChevronDownIcon, SubtitlesIcon, CheckIcon } from './Icons';
