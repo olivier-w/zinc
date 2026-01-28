@@ -5,8 +5,12 @@ use crate::transcription::{
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::fs;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
+
+/// Maximum stderr to capture for error reporting (8KB)
+const MAX_STDERR_BYTES: usize = 8192;
 
 /// Manages all transcription engines and provides a unified API
 pub struct TranscriptionManager {
@@ -133,6 +137,60 @@ impl TranscriptionManager {
             .await
     }
 
+    /// Get video duration in seconds using ffprobe
+    async fn get_video_duration_secs(video_path: &Path) -> Option<f64> {
+        let mut cmd = Command::new(if cfg!(target_os = "windows") {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        });
+
+        cmd.args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path.to_str().unwrap_or(""),
+        ]);
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+
+        let output = cmd.output().await.ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.trim().parse::<f64>().ok()
+    }
+
+    /// Calculate a timeout duration based on file size.
+    /// Returns 1 minute per GB, clamped between 5 minutes and 2 hours.
+    fn compute_timeout(file_size_bytes: u64) -> std::time::Duration {
+        let size_gb = file_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        let minutes = (size_gb * 1.0).max(5.0).min(120.0);
+        std::time::Duration::from_secs((minutes * 60.0) as u64)
+    }
+
+    /// Spawn a task that reads stderr line-by-line, keeping up to MAX_STDERR_BYTES.
+    /// This prevents the pipe buffer from filling up and blocking ffmpeg.
+    fn spawn_stderr_drain(
+        stderr: tokio::process::ChildStderr,
+    ) -> tokio::task::JoinHandle<String> {
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            let mut collected = String::new();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if collected.len() < MAX_STDERR_BYTES {
+                    if !collected.is_empty() {
+                        collected.push('\n');
+                    }
+                    collected.push_str(&line);
+                }
+            }
+            collected
+        })
+    }
+
     /// Extract audio from video file to 16kHz mono WAV format (required by most transcription engines)
     async fn extract_audio(
         video_path: &Path,
@@ -161,6 +219,21 @@ impl TranscriptionManager {
 
         let audio_path = temp_dir.join("audio.wav");
 
+        // Get file size for timeout calculation
+        let file_size = fs::metadata(video_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let timeout_duration = Self::compute_timeout(file_size);
+
+        if file_size > 10 * 1024 * 1024 * 1024 {
+            log::warn!(
+                "Large file detected ({:.1} GB): {:?}",
+                file_size as f64 / (1024.0 * 1024.0 * 1024.0),
+                video_path
+            );
+        }
+
         // Extract audio using ffmpeg: 16kHz mono WAV (required by sherpa-onnx and whisper)
         let mut cmd = Command::new(if cfg!(target_os = "windows") {
             "ffmpeg.exe"
@@ -179,7 +252,7 @@ impl TranscriptionManager {
             audio_path.to_str().unwrap_or(""),
         ]);
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
 
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -191,26 +264,43 @@ impl TranscriptionManager {
             .spawn()
             .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
+        // Drain stderr in background to prevent pipe buffer deadlock
+        let stderr = child.stderr.take().expect("stderr was piped");
+        let stderr_task = Self::spawn_stderr_drain(stderr);
+
         let mut cancel_rx_clone = cancel_rx.clone();
 
-        // Wait for process completion or cancellation
+        // Wait for process completion, cancellation, or timeout
         tokio::select! {
             result = child.wait() => {
                 let status = result.map_err(|e| format!("Failed to wait for ffmpeg: {}", e))?;
                 if !status.success() {
-                    // Read stderr for error message
-                    return Err("Audio extraction failed".to_string());
+                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    let detail = if stderr_output.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                    };
+                    return Err(format!("Audio extraction failed{}", detail));
                 }
             }
             _ = cancel_rx_clone.changed() => {
                 if *cancel_rx_clone.borrow() {
-                    // Kill the process
                     let _ = child.kill().await;
-                    // Clean up temp files
                     let _ = fs::remove_file(&audio_path).await;
                     let _ = fs::remove_dir(&temp_dir).await;
                     return Err("Cancelled".to_string());
                 }
+            }
+            _ = tokio::time::sleep(timeout_duration) => {
+                log::error!("Audio extraction timed out after {:?} for {:?}", timeout_duration, video_path);
+                let _ = child.kill().await;
+                let _ = fs::remove_file(&audio_path).await;
+                let _ = fs::remove_dir(&temp_dir).await;
+                return Err(format!(
+                    "Audio extraction timed out after {} minutes",
+                    timeout_duration.as_secs() / 60
+                ));
             }
         }
 
@@ -332,7 +422,7 @@ impl TranscriptionManager {
             return Err("Cancelled".to_string());
         }
 
-        // Step 2: Embed subtitles
+        // Step 3: Embed subtitles
         log::info!("Starting subtitle embedding...");
         Self::embed_subtitles(video_path, &srt_path, &output_path, language, &progress_tx, &cancel_rx).await?;
         log::info!(
@@ -340,7 +430,7 @@ impl TranscriptionManager {
             output_path.exists()
         );
 
-        // Step 3: Replace original with subtitled version
+        // Step 4: Replace original with subtitled version
         log::info!("Replacing original with subtitled version...");
         let _ = progress_tx
             .send(TranscribeProgress {
@@ -452,6 +542,24 @@ impl TranscriptionManager {
             })
             .await;
 
+        // Get file size for timeout calculation and large file warning
+        let file_size = fs::metadata(video_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let timeout_duration = Self::compute_timeout(file_size);
+
+        if file_size > 10 * 1024 * 1024 * 1024 {
+            log::warn!(
+                "Large file detected ({:.1} GB) for subtitle embedding: {:?}",
+                file_size as f64 / (1024.0 * 1024.0 * 1024.0),
+                video_path
+            );
+        }
+
+        // Get video duration for progress reporting
+        let total_duration_secs = Self::get_video_duration_secs(video_path).await;
+
         // Determine subtitle codec based on output format
         let ext = output_path
             .extension()
@@ -500,6 +608,7 @@ impl TranscriptionManager {
                 // Metadata for the new subtitle stream (now at index s:0)
                 "-metadata:s:s:0", &lang_metadata,
                 "-metadata:s:s:0", &title_metadata,
+                "-progress", "pipe:1", // Write progress to stdout
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);
@@ -521,6 +630,7 @@ impl TranscriptionManager {
                 // Metadata for the new subtitle stream (now at index s:0)
                 "-metadata:s:s:0", &lang_metadata,
                 "-metadata:s:s:0", &title_metadata,
+                "-progress", "pipe:1", // Write progress to stdout
                 "-y",
                 output_path.to_str().unwrap_or(""),
             ]);
@@ -538,24 +648,74 @@ impl TranscriptionManager {
             .spawn()
             .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
 
+        // Drain stderr in background to prevent pipe buffer deadlock
+        let stderr = child.stderr.take().expect("stderr was piped");
+        let stderr_task = Self::spawn_stderr_drain(stderr);
+
+        // Parse stdout for progress reporting (-progress pipe:1)
+        let stdout = child.stdout.take().expect("stdout was piped");
+        let progress_tx_clone = progress_tx.clone();
+        let progress_task = tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // ffmpeg -progress outputs lines like: out_time_us=12345678
+                if let Some(time_us_str) = line.strip_prefix("out_time_us=") {
+                    if let Ok(time_us) = time_us_str.trim().parse::<i64>() {
+                        if time_us > 0 {
+                            if let Some(total) = total_duration_secs {
+                                let current_secs = time_us as f64 / 1_000_000.0;
+                                let pct = (current_secs / total * 100.0).min(99.0);
+                                let _ = progress_tx_clone
+                                    .send(TranscribeProgress {
+                                        stage: "embedding".to_string(),
+                                        progress: pct,
+                                        message: format!(
+                                            "Embedding subtitles... {:.0}%",
+                                            pct
+                                        ),
+                                    })
+                                    .await;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         let mut cancel_rx_clone = cancel_rx.clone();
 
-        // Wait for process completion or cancellation
+        // Wait for process completion, cancellation, or timeout
         tokio::select! {
             result = child.wait() => {
                 let status = result.map_err(|e| format!("Failed to wait for ffmpeg: {}", e))?;
+                // Ensure progress task finishes so stdout is fully consumed
+                let _ = progress_task.await;
                 if !status.success() {
-                    return Err("ffmpeg muxing failed".to_string());
+                    let stderr_output = stderr_task.await.unwrap_or_default();
+                    let detail = if stderr_output.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                    };
+                    return Err(format!("ffmpeg muxing failed{}", detail));
                 }
             }
             _ = cancel_rx_clone.changed() => {
                 if *cancel_rx_clone.borrow() {
-                    // Kill the process
                     let _ = child.kill().await;
-                    // Clean up partial output
                     let _ = fs::remove_file(output_path).await;
                     return Err("Cancelled".to_string());
                 }
+            }
+            _ = tokio::time::sleep(timeout_duration) => {
+                log::error!("Subtitle embedding timed out after {:?} for {:?}", timeout_duration, video_path);
+                let _ = child.kill().await;
+                let _ = fs::remove_file(output_path).await;
+                return Err(format!(
+                    "Subtitle embedding timed out after {} minutes",
+                    timeout_duration.as_secs() / 60
+                ));
             }
         }
 
