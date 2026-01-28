@@ -456,6 +456,10 @@ impl TranscriptionManager {
         // Delete SRT file (subtitles are now embedded in video)
         let _ = fs::remove_file(&srt_path).await;
 
+        // Clean up temp directory
+        let temp_dir = video_dir.join(".zinc_temp");
+        let _ = fs::remove_dir_all(&temp_dir).await;
+
         let _ = progress_tx
             .send(TranscribeProgress {
                 stage: "complete".to_string(),
