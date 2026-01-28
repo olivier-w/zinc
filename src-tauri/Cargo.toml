@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A minimal, beautiful video download app"
 authors = ["Zinc"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/zincdl/zinc"
 edition = "2021"
 rust-version = "1.77.2"
 
