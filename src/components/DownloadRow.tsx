@@ -231,14 +231,9 @@ export const DownloadRow = memo(function DownloadRow({
           </div>
         )}
 
-        {/* Title - truncated */}
-        <span className="flex-1 text-sm text-text-primary truncate min-w-0">
-          {truncate(download.title, 50)}
-        </span>
-
         {/* Status text */}
         <span className={cn(
-          'text-xs tabular-nums shrink-0 max-w-[180px] truncate',
+          'text-xs tabular-nums flex-1 min-w-0 truncate',
           isDownloading && 'text-accent',
           isTranscribing && 'text-purple-400',
           isPendingLocalTranscribe && 'text-accent',
