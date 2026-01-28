@@ -11,7 +11,7 @@ interface URLInputProps {
   variant?: 'hero' | 'compact';
 }
 
-export function URLInput({ onSubmit, onLocalFile, isLoading = false, disabled = false, variant: _variant = 'hero' }: URLInputProps) {
+export function URLInput({ onSubmit, onLocalFile, isLoading = false, disabled = false }: URLInputProps) {
   const [url, setUrl] = useState('');
   const [shake, setShake] = useState(false);
   const [isFocused, setIsFocused] = useState(false);

@@ -67,6 +67,7 @@ export function VideoPreview({
         }
       }
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
   // Get engines that have at least one installed model
