@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window';
 import type { Download, VideoInfo, SubtitleSettings } from '@/lib/types';
 import {
   startDownload as apiStartDownload,
@@ -221,6 +222,48 @@ export function useDownload() {
       return next;
     });
   }, []);
+
+  // Derived taskbar progress state
+  const taskbarState = useMemo(() => {
+    let activeCount = 0;
+    let totalProgress = 0;
+    let hasError = false;
+
+    for (const d of downloads.values()) {
+      const isDownloading = d.status === 'downloading' || (d.task_type === 'download' && d.status === 'pending');
+      const isTranscribing = d.status === 'transcribing' || d.status.startsWith('transcribing:');
+
+      if (isDownloading) {
+        activeCount++;
+        totalProgress += d.progress;
+      } else if (isTranscribing) {
+        activeCount++;
+        totalProgress += d.transcription_progress ?? 0;
+      } else if (d.status === 'error') {
+        hasError = true;
+      }
+    }
+
+    if (activeCount > 0) {
+      return { status: 'Normal' as const, progress: Math.round(totalProgress / activeCount) };
+    }
+    if (hasError) {
+      return { status: 'Error' as const, progress: 100 };
+    }
+    return { status: 'None' as const, progress: 0 };
+  }, [downloads]);
+
+  // Sync taskbar progress bar with download/transcription state
+  useEffect(() => {
+    getCurrentWindow().setProgressBar({
+      status: taskbarState.status === 'None'
+        ? ProgressBarStatus.None
+        : taskbarState.status === 'Error'
+          ? ProgressBarStatus.Error
+          : ProgressBarStatus.Normal,
+      progress: taskbarState.progress,
+    }).catch(() => {});
+  }, [taskbarState.status, taskbarState.progress]);
 
   // Derived state - reverse so latest downloads appear first
   const downloadList = useMemo(
