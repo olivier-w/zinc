@@ -2,6 +2,12 @@
 
 Desktop video downloader with AI subtitles. Built with Tauri + React.
 
+<img width="902" height="732" alt="Screenshot 2026-01-28 183830" src="https://github.com/user-attachments/assets/8fe19fe3-e21e-4f64-a9c8-25d7a772739a" />
+<img width="902" height="732" alt="Screenshot 2026-01-28 183827" src="https://github.com/user-attachments/assets/2a77b246-857f-482d-b097-afd6d0d60b20" />
+<img width="902" height="732" alt="Screenshot 2026-01-28 183824" src="https://github.com/user-attachments/assets/9444e7cc-4303-44c2-9ed3-ae790ba1e9f8" />
+<img width="902" height="732" alt="Screenshot 2026-01-28 183811" src="https://github.com/user-attachments/assets/be3cf635-1641-4619-ac34-17f57eff666a" />
+
+
 ## Disclaimer
 
 This software is provided as-is. We're not responsible for any hardware damage or other issues that may arise from using Zinc. **Use at your own risk.**
