@@ -9,7 +9,7 @@ const defaultConfig: AppConfig = {
   theme: 'system',
   generate_subtitles: false,
   whisper_model: 'base',
-  transcription_engine: 'whisper_cpp',
+  transcription_engine: 'whisper_rs',
   transcription_model: 'base',
   network_interface: null,
   ytdlp_channel: 'nightly',

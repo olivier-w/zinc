@@ -102,6 +102,25 @@ impl YtDlp {
         })
     }
 
+    /// Configure YouTube-specific args: Deno runtime for EJS and cookies/player client.
+    ///
+    /// With cookies, yt-dlp uses optimal authenticated defaults — don't override.
+    /// Without cookies, exclude broken android_sdkless client (causes 403 errors).
+    /// See: https://github.com/yt-dlp/yt-dlp/issues/15712
+    fn apply_youtube_args(cmd: &mut Command, cookies_browser: Option<&str>) {
+        if let Ok(deno_path) = DenoManager::get_binary_path() {
+            if deno_path.exists() {
+                cmd.args(["--js-runtimes", &format!("deno:{}", deno_path.display())]);
+            }
+        }
+
+        if let Some(browser) = cookies_browser {
+            cmd.args(["--cookies-from-browser", browser]);
+        } else {
+            cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+        }
+    }
+
     pub async fn check_installed() -> bool {
         let mut cmd = Command::new(Self::get_command());
         cmd.arg("--version")
@@ -126,22 +145,7 @@ impl YtDlp {
             "--no-playlist",
         ]);
 
-        // Pass Deno runtime path for EJS support (needed for YouTube)
-        if let Ok(deno_path) = DenoManager::get_binary_path() {
-            if deno_path.exists() {
-                cmd.args(["--js-runtimes", &format!("deno:{}", deno_path.display())]);
-            }
-        }
-
-        // With cookies, yt-dlp uses optimal authenticated defaults (tv_downgraded,web,web_safari
-        // for free accounts, tv_downgraded,web_creator,web for premium) — don't override.
-        // Without cookies, exclude broken android_sdkless client (causes 403 errors).
-        // See: https://github.com/yt-dlp/yt-dlp/issues/15712
-        if let Some(browser) = cookies_browser {
-            cmd.args(["--cookies-from-browser", browser]);
-        } else {
-            cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
-        }
+        Self::apply_youtube_args(&mut cmd, cookies_browser);
 
         cmd.arg(url);
 
@@ -237,22 +241,7 @@ impl YtDlp {
             cmd.args(["--source-address", addr]);
         }
 
-        // Pass Deno runtime path for EJS support (needed for YouTube)
-        if let Ok(deno_path) = DenoManager::get_binary_path() {
-            if deno_path.exists() {
-                cmd.args(["--js-runtimes", &format!("deno:{}", deno_path.display())]);
-            }
-        }
-
-        // With cookies, yt-dlp uses optimal authenticated defaults (tv_downgraded,web,web_safari
-        // for free accounts, tv_downgraded,web_creator,web for premium) — don't override.
-        // Without cookies, exclude broken android_sdkless client (causes 403 errors).
-        // See: https://github.com/yt-dlp/yt-dlp/issues/15712
-        if let Some(ref browser) = options.cookies_browser {
-            cmd.args(["--cookies-from-browser", browser]);
-        } else {
-            cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
-        }
+        Self::apply_youtube_args(&mut cmd, options.cookies_browser.as_deref());
 
         cmd.arg(url)
             .stdout(Stdio::piped())
