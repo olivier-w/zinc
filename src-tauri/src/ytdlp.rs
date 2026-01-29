@@ -1,3 +1,4 @@
+use crate::deno_manager::DenoManager;
 use crate::ytdlp_manager::YtDlpManager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -121,8 +122,20 @@ impl YtDlp {
             "--no-download",
             "--no-warnings",
             "--no-playlist",
-            url,
         ]);
+
+        // Pass Deno runtime path for EJS support (needed for YouTube)
+        if let Ok(deno_path) = DenoManager::get_binary_path() {
+            if deno_path.exists() {
+                cmd.args(["--js-runtimes", &format!("deno:{}", deno_path.display())]);
+            }
+        }
+
+        // Exclude broken android_sdkless client (causes 403 errors on YouTube)
+        // See: https://github.com/yt-dlp/yt-dlp/issues/15712
+        cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+
+        cmd.arg(url);
 
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -215,6 +228,17 @@ impl YtDlp {
         if let Some(ref addr) = options.source_address {
             cmd.args(["--source-address", addr]);
         }
+
+        // Pass Deno runtime path for EJS support (needed for YouTube)
+        if let Ok(deno_path) = DenoManager::get_binary_path() {
+            if deno_path.exists() {
+                cmd.args(["--js-runtimes", &format!("deno:{}", deno_path.display())]);
+            }
+        }
+
+        // Exclude broken android_sdkless client (causes 403 errors on YouTube)
+        // See: https://github.com/yt-dlp/yt-dlp/issues/15712
+        cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
 
         cmd.arg(url)
             .stdout(Stdio::piped())

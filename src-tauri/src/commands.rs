@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::deno_manager::{DenoManager, DenoStatus};
 use crate::network::{self, NetworkInterface};
 use crate::transcription::{EngineInfo, InstallProgress as TranscriptionInstallProgress, TranscribeProgress, TranscriptionModel as TranscriptionModelInfo};
 use crate::transcription_manager::TranscriptionManager;
@@ -446,6 +447,17 @@ pub async fn install_ytdlp(
     })
     .await?;
 
+    // Auto-install Deno if not already present (needed for YouTube EJS)
+    if let Ok(deno_path) = DenoManager::get_binary_path() {
+        if !deno_path.exists() {
+            let app_for_deno = app.clone();
+            let _ = DenoManager::install(move |progress: InstallProgress| {
+                let _ = app_for_deno.emit("deno-install-progress", progress);
+            })
+            .await;
+        }
+    }
+
     Ok(version)
 }
 
@@ -787,6 +799,25 @@ pub async fn update_transcription_settings(
     let _ = app.emit("download-progress", download.clone());
 
     Ok(())
+}
+
+// Deno manager commands
+
+#[tauri::command]
+pub async fn get_deno_status() -> Result<DenoStatus, String> {
+    Ok(DenoManager::check_status().await)
+}
+
+#[tauri::command]
+pub async fn install_deno(app: AppHandle) -> Result<String, String> {
+    let app_clone = app.clone();
+
+    let version = DenoManager::install(move |progress: InstallProgress| {
+        let _ = app_clone.emit("deno-install-progress", progress);
+    })
+    .await?;
+
+    Ok(version)
 }
 
 // Network interface commands

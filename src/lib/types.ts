@@ -116,6 +116,11 @@ export interface Toast {
   duration?: number;
 }
 
+export type DenoStatus =
+  | { status: 'not_installed' }
+  | { status: 'installed'; version: string; path: string }
+  | { status: 'error'; message: string };
+
 export type YtDlpStatus =
   | { status: 'not_installed' }
   | { status: 'installed'; version: string; path: string }

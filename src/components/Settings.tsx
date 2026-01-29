@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, NetworkInterface } from '@/lib/types';
-import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, listNetworkInterfaces } from '@/lib/tauri';
+import type { AppConfig, YtDlpStatus, YtDlpInstallProgress, DenoStatus, WhisperStatus, TranscriptionEngine, TranscriptionInstallProgress, NetworkInterface } from '@/lib/types';
+import { selectDirectory, getYtdlpStatus, updateYtdlp, checkYtdlpUpdate, onYtdlpInstallProgress, getDenoStatus, installDeno, onDenoInstallProgress, getWhisperStatus, checkFfmpeg, getTranscriptionEngines, downloadTranscriptionModel, onTranscriptionInstallProgress, listNetworkInterfaces } from '@/lib/tauri';
 import { cn, truncate } from '@/lib/utils';
 import { QUALITY_PRESETS, FORMAT_OPTIONS } from '@/lib/constants';
 import { FolderIcon, XIcon, ChevronDownIcon, RefreshIcon, CheckIcon, LoaderIcon, DownloadIcon } from './Icons';
@@ -22,6 +22,11 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<YtDlpInstallProgress | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<string | null>(null);
+
+  // Deno state
+  const [denoStatus, setDenoStatus] = useState<DenoStatus | null>(null);
+  const [isInstallingDeno, setIsInstallingDeno] = useState(false);
+  const [denoProgress, setDenoProgress] = useState<YtDlpInstallProgress | null>(null);
 
   // Whisper state (legacy - kept for existing installations display)
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(null);
@@ -46,6 +51,7 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
           setAvailableUpdate(status.latest);
         }
       }).catch(() => {});
+      getDenoStatus().then(setDenoStatus).catch(() => {});
       getWhisperStatus().then(setWhisperStatus).catch(() => {});
       checkFfmpeg().then(setHasFfmpeg).catch(() => setHasFfmpeg(false));
       getTranscriptionEngines().then(setEngines).catch(() => {});
@@ -62,6 +68,21 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
 
     onYtdlpInstallProgress((progress) => {
       setUpdateProgress(progress);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  // Listen for Deno install progress
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    onDenoInstallProgress((progress) => {
+      setDenoProgress(progress);
     }).then((fn) => {
       unlisten = fn;
     });
@@ -112,6 +133,21 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
     } finally {
       setIsUpdating(false);
       setUpdateProgress(null);
+    }
+  }, []);
+
+  const handleInstallDeno = useCallback(async () => {
+    setIsInstallingDeno(true);
+    setDenoProgress(null);
+    try {
+      await installDeno();
+      const status = await getDenoStatus();
+      setDenoStatus(status);
+    } catch (err) {
+      console.error('Failed to install Deno:', err);
+    } finally {
+      setIsInstallingDeno(false);
+      setDenoProgress(null);
     }
   }, []);
 
@@ -404,6 +440,67 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                         <ProgressBar percentage={updateProgress.percentage} />
                       </div>
                     )}
+
+                    {/* JavaScript Runtime (Deno) */}
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary px-1 mb-2">
+                        JavaScript Runtime
+                      </label>
+                      <div className="flex items-center justify-between px-4 py-3 bg-bg-tertiary rounded-lg">
+                        <div>
+                          {denoStatus?.status === 'installed' ? (
+                            <>
+                              <p className="text-sm text-text-primary">Deno v{denoStatus.version}</p>
+                              <p className="text-xs text-text-tertiary mt-0.5">Required for YouTube downloads</p>
+                            </>
+                          ) : denoStatus?.status === 'not_installed' ? (
+                            <>
+                              <p className="text-sm text-text-primary">Not installed</p>
+                              <p className="text-xs text-text-tertiary mt-0.5">Required for YouTube downloads</p>
+                            </>
+                          ) : denoStatus?.status === 'error' ? (
+                            <>
+                              <p className="text-sm text-error">{denoStatus.message}</p>
+                            </>
+                          ) : (
+                            <p className="text-sm text-text-tertiary">Loading...</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {denoStatus?.status === 'installed' ? (
+                            <span className="flex items-center gap-2 text-sm text-success">
+                              <CheckIcon className="w-4 h-4" />
+                            </span>
+                          ) : denoStatus?.status === 'not_installed' ? (
+                            <button
+                              onClick={handleInstallDeno}
+                              disabled={isInstallingDeno}
+                              className={cn(
+                                'flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+                                'bg-accent text-white hover:bg-accent/90 disabled:opacity-50'
+                              )}
+                            >
+                              {isInstallingDeno ? (
+                                <>
+                                  <LoaderIcon className="w-4 h-4 animate-spin" />
+                                  Installing...
+                                </>
+                              ) : (
+                                <>
+                                  <DownloadIcon className="w-4 h-4" />
+                                  Install
+                                </>
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      {isInstallingDeno && denoProgress && (
+                        <div className="px-4 mt-2">
+                          <ProgressBar percentage={denoProgress.percentage} />
+                        </div>
+                      )}
+                    </div>
 
                   </div>
                 ) : ytdlpStatus?.status === 'not_installed' ? (

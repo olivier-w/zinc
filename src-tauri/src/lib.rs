@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod deno_manager;
 mod network;
 mod sherpa_manager;
 mod transcription;
@@ -64,6 +65,9 @@ pub fn run() {
             commands::update_transcription_settings,
             // Network interface
             commands::list_network_interfaces,
+            // Deno manager
+            commands::get_deno_status,
+            commands::install_deno,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
