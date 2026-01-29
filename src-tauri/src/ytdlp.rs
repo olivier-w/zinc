@@ -60,6 +60,7 @@ pub struct DownloadOptions {
     pub generate_subtitles: bool,
     pub whisper_model: Option<String>,
     pub source_address: Option<String>, // IPv4 address to bind downloads to
+    pub cookies_browser: Option<String>, // Browser name for --cookies-from-browser
 }
 
 impl Default for DownloadOptions {
@@ -72,6 +73,7 @@ impl Default for DownloadOptions {
             generate_subtitles: false,
             whisper_model: None,
             source_address: None,
+            cookies_browser: None,
         }
     }
 }
@@ -115,7 +117,7 @@ impl YtDlp {
             .unwrap_or(false)
     }
 
-    pub async fn get_video_info(url: &str) -> Result<VideoInfo, String> {
+    pub async fn get_video_info(url: &str, cookies_browser: Option<&str>) -> Result<VideoInfo, String> {
         let mut cmd = Command::new(Self::get_command());
         cmd.args([
             "--dump-json",
@@ -131,9 +133,15 @@ impl YtDlp {
             }
         }
 
-        // Exclude broken android_sdkless client (causes 403 errors on YouTube)
+        // With cookies, yt-dlp uses optimal authenticated defaults (tv_downgraded,web,web_safari
+        // for free accounts, tv_downgraded,web_creator,web for premium) — don't override.
+        // Without cookies, exclude broken android_sdkless client (causes 403 errors).
         // See: https://github.com/yt-dlp/yt-dlp/issues/15712
-        cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+        if let Some(browser) = cookies_browser {
+            cmd.args(["--cookies-from-browser", browser]);
+        } else {
+            cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+        }
 
         cmd.arg(url);
 
@@ -236,9 +244,15 @@ impl YtDlp {
             }
         }
 
-        // Exclude broken android_sdkless client (causes 403 errors on YouTube)
+        // With cookies, yt-dlp uses optimal authenticated defaults (tv_downgraded,web,web_safari
+        // for free accounts, tv_downgraded,web_creator,web for premium) — don't override.
+        // Without cookies, exclude broken android_sdkless client (causes 403 errors).
         // See: https://github.com/yt-dlp/yt-dlp/issues/15712
-        cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+        if let Some(ref browser) = options.cookies_browser {
+            cmd.args(["--cookies-from-browser", browser]);
+        } else {
+            cmd.args(["--extractor-args", "youtube:player_client=default,-android_sdkless"]);
+        }
 
         cmd.arg(url)
             .stdout(Stdio::piped())

@@ -13,6 +13,7 @@ const defaultConfig: AppConfig = {
   transcription_model: 'base',
   network_interface: null,
   ytdlp_channel: 'nightly',
+  cookies_browser: null,
 };
 
 let cachedConfig: AppConfig | null = null;

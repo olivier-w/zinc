@@ -502,6 +502,40 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                       )}
                     </div>
 
+                    {/* YouTube Cookies */}
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary px-1 mb-2">
+                        YouTube Cookies
+                      </label>
+                      <div className="px-4 py-3 bg-bg-tertiary rounded-lg space-y-2">
+                        <select
+                          value={config.cookies_browser ?? ''}
+                          onChange={async (e) => {
+                            const value = e.target.value || null;
+                            await onSave({ cookies_browser: value });
+                          }}
+                          className="w-full bg-bg-secondary text-text-primary text-sm rounded-lg px-3 py-2 border border-border focus:border-accent focus:outline-none"
+                        >
+                          <option value="">None (default)</option>
+                          <option value="chrome">Chrome</option>
+                          <option value="firefox">Firefox</option>
+                          <option value="edge">Edge</option>
+                          <option value="brave">Brave</option>
+                          <option value="opera">Opera</option>
+                          <option value="vivaldi">Vivaldi</option>
+                          <option value="safari">Safari</option>
+                        </select>
+                        <p className="text-xs text-text-tertiary">
+                          Pass browser cookies to yt-dlp for higher quality YouTube downloads. Requires the selected browser to be logged into YouTube.
+                        </p>
+                        {config.cookies_browser && (
+                          <p className="text-xs text-warning">
+                            Using cookies may expose your YouTube account to yt-dlp. Use at your own risk.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
                 ) : ytdlpStatus?.status === 'not_installed' ? (
                   <p className="text-sm text-text-tertiary">

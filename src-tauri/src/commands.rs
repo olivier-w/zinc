@@ -67,8 +67,12 @@ pub async fn check_ytdlp() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn get_video_info(url: String) -> Result<VideoInfo, String> {
-    YtDlp::get_video_info(&url).await
+pub async fn get_video_info(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+) -> Result<VideoInfo, String> {
+    let cookies_browser = state.config.lock().await.cookies_browser.clone();
+    YtDlp::get_video_info(&url, cookies_browser.as_deref()).await
 }
 
 #[tauri::command]
@@ -154,6 +158,7 @@ pub async fn start_download(
         generate_subtitles,
         whisper_model: Some(transcription_model.clone()),
         source_address: config.network_interface.clone(),
+        cookies_browser: config.cookies_browser.clone(),
     };
 
     drop(config);

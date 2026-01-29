@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub network_interface: Option<String>, // Stores IPv4 address or None for any interface
     #[serde(default = "default_ytdlp_channel")]
     pub ytdlp_channel: String,
+    #[serde(default)]
+    pub cookies_browser: Option<String>,
 }
 
 fn default_whisper_model() -> String {
@@ -54,6 +56,7 @@ impl Default for AppConfig {
             transcription_model: default_transcription_model(),
             network_interface: None,
             ytdlp_channel: default_ytdlp_channel(),
+            cookies_browser: None,
         }
     }
 }
