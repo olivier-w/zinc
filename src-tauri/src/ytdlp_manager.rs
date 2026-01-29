@@ -93,14 +93,26 @@ impl YtDlpManager {
         Ok(version)
     }
 
+    /// Returns the GitHub repo path for the given channel
+    fn repo_for_channel(channel: &str) -> &'static str {
+        match channel {
+            "stable" => "yt-dlp/yt-dlp",
+            "master" => "yt-dlp/yt-dlp-master-builds",
+            _ => "yt-dlp/yt-dlp-nightly-builds",
+        }
+    }
+
     /// Fetch the latest version from GitHub API
-    pub async fn get_latest_version() -> Result<String, String> {
+    pub async fn get_latest_version(channel: &str) -> Result<String, String> {
+        let repo = Self::repo_for_channel(channel);
+        let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
         let response = client
-            .get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
+            .get(&url)
             .header("User-Agent", "Zinc-App")
             .send()
             .await
@@ -125,7 +137,7 @@ impl YtDlpManager {
     }
 
     /// Get the current status of yt-dlp
-    pub async fn check_status() -> YtDlpStatus {
+    pub async fn check_status(channel: &str) -> YtDlpStatus {
         let binary_path = match Self::get_binary_path() {
             Ok(p) => p,
             Err(e) => return YtDlpStatus::Error { message: e },
@@ -141,7 +153,7 @@ impl YtDlpManager {
         };
 
         // Check for updates (don't fail if this fails)
-        if let Ok(latest) = Self::get_latest_version().await {
+        if let Ok(latest) = Self::get_latest_version(channel).await {
             if version != latest {
                 return YtDlpStatus::UpdateAvailable {
                     current: version,
@@ -179,18 +191,20 @@ impl YtDlpManager {
     }
 
     /// Get the download URL for the current platform
-    fn get_download_url() -> &'static str {
-        if cfg!(target_os = "windows") {
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    fn get_download_url(channel: &str) -> String {
+        let repo = Self::repo_for_channel(channel);
+        let binary = if cfg!(target_os = "windows") {
+            "yt-dlp.exe"
         } else if cfg!(target_os = "macos") {
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+            "yt-dlp_macos"
         } else {
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
-        }
+            "yt-dlp_linux"
+        };
+        format!("https://github.com/{}/releases/latest/download/{}", repo, binary)
     }
 
     /// Install yt-dlp by downloading from GitHub
-    pub async fn install<F>(progress_callback: F) -> Result<String, String>
+    pub async fn install<F>(channel: &str, progress_callback: F) -> Result<String, String>
     where
         F: Fn(InstallProgress) + Send + 'static,
     {
@@ -202,11 +216,11 @@ impl YtDlpManager {
             .await
             .map_err(|e| format!("Failed to create bin directory: {}", e))?;
 
-        let download_url = Self::get_download_url();
+        let download_url = Self::get_download_url(channel);
 
         let client = reqwest::Client::new();
         let response = client
-            .get(download_url)
+            .get(&download_url)
             .header("User-Agent", "Zinc-App")
             .send()
             .await
@@ -280,11 +294,11 @@ impl YtDlpManager {
     }
 
     /// Update yt-dlp to the latest version
-    pub async fn update<F>(progress_callback: F) -> Result<String, String>
+    pub async fn update<F>(channel: &str, progress_callback: F) -> Result<String, String>
     where
         F: Fn(InstallProgress) + Send + 'static,
     {
         // Simply re-download - the install function handles everything
-        Self::install(progress_callback).await
+        Self::install(channel, progress_callback).await
     }
 }

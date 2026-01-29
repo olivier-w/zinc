@@ -421,8 +421,11 @@ pub fn get_format_presets() -> HashMap<String, String> {
 // yt-dlp manager commands
 
 #[tauri::command]
-pub async fn get_ytdlp_status() -> Result<YtDlpStatus, String> {
-    Ok(YtDlpManager::check_status().await)
+pub async fn get_ytdlp_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<YtDlpStatus, String> {
+    let channel = state.config.lock().await.ytdlp_channel.clone();
+    Ok(YtDlpManager::check_status(&channel).await)
 }
 
 #[tauri::command]
@@ -431,10 +434,14 @@ pub async fn get_ytdlp_status_fast() -> Result<YtDlpStatus, String> {
 }
 
 #[tauri::command]
-pub async fn install_ytdlp(app: AppHandle) -> Result<String, String> {
+pub async fn install_ytdlp(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let channel = state.config.lock().await.ytdlp_channel.clone();
     let app_clone = app.clone();
 
-    let version = YtDlpManager::install(move |progress: InstallProgress| {
+    let version = YtDlpManager::install(&channel, move |progress: InstallProgress| {
         let _ = app_clone.emit("ytdlp-install-progress", progress);
     })
     .await?;
@@ -443,10 +450,14 @@ pub async fn install_ytdlp(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
+pub async fn update_ytdlp(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let channel = state.config.lock().await.ytdlp_channel.clone();
     let app_clone = app.clone();
 
-    let version = YtDlpManager::update(move |progress: InstallProgress| {
+    let version = YtDlpManager::update(&channel, move |progress: InstallProgress| {
         let _ = app_clone.emit("ytdlp-install-progress", progress);
     })
     .await?;
@@ -455,13 +466,16 @@ pub async fn update_ytdlp(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn check_ytdlp_update() -> Result<Option<String>, String> {
+pub async fn check_ytdlp_update(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let channel = state.config.lock().await.ytdlp_channel.clone();
     let current = match YtDlpManager::get_installed_version().await {
         Ok(v) => v,
         Err(_) => return Ok(None),
     };
 
-    let latest = YtDlpManager::get_latest_version().await?;
+    let latest = YtDlpManager::get_latest_version(&channel).await?;
 
     if current != latest {
         Ok(Some(latest))

@@ -35,7 +35,7 @@ Zinc is a desktop video downloader built with **Tauri 2** (Rust backend) and **R
 ### Frontend (`/src`)
 - **Entry:** `main.tsx` → `App.tsx`
 - **Components:** `/components` - UI components (URLInput, VideoPreview, DownloadsTray, Settings, etc.)
-- **Hooks:** `/hooks` - State management (useDownload, useSettings, useToast)
+- **Hooks:** `/hooks` - State management (useDownload, useSettings, useToast, useTheme)
 - **Tauri Bridge:** `/lib/tauri.ts` - Wraps `invoke()` calls to backend commands
 - **Types:** `/lib/types.ts` - TypeScript interfaces matching Rust structs
 
@@ -45,6 +45,9 @@ Zinc is a desktop video downloader built with **Tauri 2** (Rust backend) and **R
 - **Config:** `config.rs` - User settings persistence (JSON in config directory)
 - **yt-dlp:** `ytdlp.rs` - Video info fetching and download execution
 - **yt-dlp Manager:** `ytdlp_manager.rs` - Auto-install/update of yt-dlp binary
+- **Whisper:** `whisper.rs` / `whisper_manager.rs` - Whisper model management and native whisper-rs integration
+- **Sherpa Manager:** `sherpa_manager.rs` - Auto-install/update of sherpa-onnx binary for Moonshine
+- **Network:** `network.rs` - Network interface utilities (e.g., source address binding)
 - **Transcription:** `transcription/` - Multi-engine transcription system
 - **Transcription Manager:** `transcription_manager.rs` - Orchestrates transcription pipeline
 

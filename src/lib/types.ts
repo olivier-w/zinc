@@ -63,6 +63,7 @@ export interface AppConfig {
   transcription_engine: string;
   transcription_model: string;
   network_interface: string | null; // IPv4 address or null for any interface
+  ytdlp_channel: 'stable' | 'nightly' | 'master';
 }
 
 export interface NetworkInterface {

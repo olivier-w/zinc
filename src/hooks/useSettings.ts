@@ -12,6 +12,7 @@ const defaultConfig: AppConfig = {
   transcription_engine: 'whisper_cpp',
   transcription_model: 'base',
   network_interface: null,
+  ytdlp_channel: 'nightly',
 };
 
 let cachedConfig: AppConfig | null = null;

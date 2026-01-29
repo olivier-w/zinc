@@ -40,7 +40,12 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
   // Fetch yt-dlp status when settings open
   useEffect(() => {
     if (isOpen) {
-      getYtdlpStatus().then(setYtdlpStatus).catch(() => {});
+      getYtdlpStatus().then((status) => {
+        setYtdlpStatus(status);
+        if (status.status === 'update_available') {
+          setAvailableUpdate(status.latest);
+        }
+      }).catch(() => {});
       getWhisperStatus().then(setWhisperStatus).catch(() => {});
       checkFfmpeg().then(setHasFfmpeg).catch(() => setHasFfmpeg(false));
       getTranscriptionEngines().then(setEngines).catch(() => {});
@@ -356,17 +361,50 @@ export function Settings({ isOpen, onClose, config, onSave }: SettingsProps) {
                       </div>
                     </div>
 
+                    {/* Update Channel */}
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary px-1 mb-2">
+                        Update Channel
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['stable', 'nightly', 'master'] as const).map((ch) => (
+                          <button
+                            key={ch}
+                            onClick={async () => {
+                              await onSave({ ytdlp_channel: ch });
+                              setAvailableUpdate(null);
+                              setIsCheckingUpdate(true);
+                              try {
+                                const latest = await checkYtdlpUpdate();
+                                setAvailableUpdate(latest);
+                              } catch {
+                                // silently fail — user can still manually check
+                              } finally {
+                                setIsCheckingUpdate(false);
+                              }
+                            }}
+                            className={cn(
+                              'px-4 py-2.5 rounded-lg text-sm font-medium transition-colors capitalize',
+                              config.ytdlp_channel === ch
+                                ? 'bg-accent text-white'
+                                : 'bg-bg-tertiary text-text-secondary hover:text-text-primary'
+                            )}
+                          >
+                            {ch}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-text-tertiary mt-2 px-1">
+                        Nightly and master builds include the latest fixes but may be less stable
+                      </p>
+                    </div>
+
                     {isUpdating && updateProgress && (
                       <div className="px-4">
                         <ProgressBar percentage={updateProgress.percentage} />
                       </div>
                     )}
 
-                    {ytdlpStatus?.status === 'update_available' && !availableUpdate && (
-                      <p className="text-xs text-accent px-1">
-                        Update available: {ytdlpStatus.latest}
-                      </p>
-                    )}
                   </div>
                 ) : ytdlpStatus?.status === 'not_installed' ? (
                   <p className="text-sm text-text-tertiary">

@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub transcription_model: String,
     #[serde(default)]
     pub network_interface: Option<String>, // Stores IPv4 address or None for any interface
+    #[serde(default = "default_ytdlp_channel")]
+    pub ytdlp_channel: String,
 }
 
 fn default_whisper_model() -> String {
@@ -29,6 +31,10 @@ fn default_transcription_engine() -> String {
 
 fn default_transcription_model() -> String {
     "base".to_string()
+}
+
+fn default_ytdlp_channel() -> String {
+    "nightly".to_string()
 }
 
 impl Default for AppConfig {
@@ -47,6 +53,7 @@ impl Default for AppConfig {
             transcription_engine: default_transcription_engine(),
             transcription_model: default_transcription_model(),
             network_interface: None,
+            ytdlp_channel: default_ytdlp_channel(),
         }
     }
 }
