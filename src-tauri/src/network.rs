@@ -11,6 +11,7 @@ pub struct NetworkInterface {
 /// Get all network interfaces with IPv4 addresses.
 /// Filters out loopback and link-local addresses.
 /// Sorts connected interfaces first, then alphabetically by name.
+#[cfg(target_os = "windows")]
 pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>, String> {
     let adapters = ipconfig::get_adapters()
         .map_err(|e| format!("Failed to enumerate network adapters: {}", e))?;
@@ -68,4 +69,9 @@ pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>, String> {
     });
 
     Ok(interfaces)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>, String> {
+    Ok(vec![])
 }

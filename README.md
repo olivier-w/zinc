@@ -34,6 +34,20 @@ Two engines available:
 
 ## Dev
 
+### Prerequisites
+
+**Windows:**
+- [Bun](https://bun.sh)
+- CUDA Toolkit 12.x (for GPU transcription)
+- Visual Studio 2022 with C++ Desktop workload
+- LLVM/Clang (set `LIBCLANG_PATH` env var)
+
+**macOS:**
+- [Bun](https://bun.sh)
+- Xcode Command Line Tools (`xcode-select --install`)
+- Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- cmake (install from [cmake.org](https://cmake.org/download/) or `brew install cmake`)
+
 ```bash
 bun install          # install deps
 bun run tauri:dev    # run the app (hot reload)

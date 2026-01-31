@@ -13,8 +13,35 @@ mod ytdlp_manager;
 use commands::AppState;
 use std::sync::Arc;
 
+/// On macOS, GUI apps launched from Finder/Spotlight get a minimal PATH
+/// that doesn't include Homebrew or MacPorts paths. This ensures commonly
+/// installed binaries like ffmpeg are discoverable.
+#[cfg(target_os = "macos")]
+fn fix_path_env() {
+    use std::env;
+    let path = env::var("PATH").unwrap_or_default();
+    let extra_paths = [
+        "/opt/homebrew/bin",       // Homebrew (Apple Silicon)
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",          // Homebrew (Intel) / MacPorts
+        "/usr/local/sbin",
+        "/opt/local/bin",          // MacPorts
+        "/opt/local/sbin",
+    ];
+    let mut new_path = path.clone();
+    for p in &extra_paths {
+        if !path.split(':').any(|seg| seg == *p) {
+            new_path = format!("{}:{}", new_path, p);
+        }
+    }
+    env::set_var("PATH", &new_path);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    fix_path_env();
+
     let state = Arc::new(AppState::default());
 
     tauri::Builder::default()
