@@ -34,7 +34,10 @@ async-trait = "0.1"
 hound = "3.5"
 tar = "0.4"
 bzip2 = "0.4"
-whisper-rs = { version = "0.15" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+whisper-rs = { version = "0.15", features = ["cuda"] }
 ipconfig = "0.3"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+whisper-rs = { version = "0.15" }
